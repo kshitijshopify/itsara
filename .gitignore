@@ -1,0 +1,25 @@
+node_modules
+
+/.cache
+/build
+/app/build
+/public/build/
+/public/_dev
+/app/public/build
+/prisma/dev.sqlite
+/prisma/dev.sqlite-journal
+database.sqlite
+
+.env
+.env.[a-ce-su-z]*
+.env.[0-9]*
+
+
+
+
+
+/extensions/*/dist
+
+# Ignore shopify files created during app dev testing 3
+.shopify/*
+.shopify.lock

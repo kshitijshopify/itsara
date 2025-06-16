@@ -1,0 +1,56 @@
+# Learn more about configuring your app at https://shopify.dev/docs/apps/tools/cli/configuration
+
+client_id = "9e3d8cb192cb91a730d1af18d80c4324"
+application_url = "https://medicare-stands-sudan-friendly.trycloudflare.com"
+embedded = true
+name = "Product sync"
+handle = "product-sync-52"
+
+[build]
+include_config_on_deploy = true
+automatically_update_urls_on_dev = true
+
+[webhooks]
+api_version = "2025-04"
+
+  [[webhooks.subscriptions]]
+  topics = [ "app/uninstalled" ]
+  uri = "/webhooks/app/uninstalled"
+
+  [[webhooks.subscriptions]]
+  topics = [ "app/scopes_update" ]
+  uri = "/webhooks/app/scopes_update"
+
+  [[webhooks.subscriptions]]
+  topics = [ "orders/create" ]
+  uri = "/webhooks/orders/create"
+
+  [[webhooks.subscriptions]]
+  topics = [ "orders/cancelled" ]
+  uri = "/webhooks/orders/cancelled"
+
+  [[webhooks.subscriptions]]
+  topics = [ "products/create", "products/update" ]
+  uri = "/webhooks/products/create"
+
+  [[webhooks.subscriptions]]
+  topics = [ "inventory_levels/update" ]
+  uri = "/webhooks/inventory_levels/update"
+
+  [[webhooks.subscriptions]]
+  topics = [ "refunds/create" ]
+  uri = "/webhooks/refunds/create"
+
+[access_scopes]
+# Learn more at https://shopify.dev/docs/apps/tools/cli/configuration#access_scopes
+scopes = "write_products,write_orders,write_inventory,write_locations"
+
+[auth]
+redirect_urls = [
+  "https://medicare-stands-sudan-friendly.trycloudflare.com/auth/callback",
+  "https://medicare-stands-sudan-friendly.trycloudflare.com/auth/shopify/callback",
+  "https://medicare-stands-sudan-friendly.trycloudflare.com/api/auth/callback"
+]
+
+[pos]
+embedded = false

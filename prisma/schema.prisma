@@ -1,0 +1,33 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mongodb"
+  url      = env("DB_URI")
+}
+
+model Session {
+  session_id    String    @id @default(auto()) @map("_id") @db.ObjectId // Unique session ID (MongoDB ObjectId)
+  id            String    @unique // Unique identifier for the session
+  shop          String // Shop name or domain for the session
+  state         String // Current state of the session
+  isOnline      Boolean   @default(false) // Online status of the session
+  scope         String? // Scope of access (optional)
+  expires       DateTime? // Expiration date of the session (optional)
+  accessToken   String // Access token for authentication
+  userId        BigInt? // User ID associated with the session (optional)
+  firstName     String? // First name of the user (optional)
+  lastName      String? // Last name of the user (optional)
+  email         String? // Email address of the user (optional)
+  accountOwner  Boolean   @default(false) // Indicates if the user is the account owner
+  locale        String? // Locale of the user (optional)
+  collaborator  Boolean?  @default(false) // Indicates if the user is a collaborator (optional)
+  emailVerified Boolean?  @default(false) // Indicates if the user's email is verified
+}
+
+model SKU {
+  id      String @id @default(auto()) @map("_id") @db.ObjectId
+  sku     String @unique  // Making sku field unique for upsert operations
+  subSKU  Json[] // Array of objects with format: [{"name": "sku-00001", "status": "available"}]
+}
