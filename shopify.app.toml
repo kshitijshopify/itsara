@@ -1,7 +1,7 @@
 # Learn more about configuring your app at https://shopify.dev/docs/apps/tools/cli/configuration
 
 client_id = "9e3d8cb192cb91a730d1af18d80c4324"
-application_url = "https://medicare-stands-sudan-friendly.trycloudflare.com"
+application_url = "https://rain-julian-downloads-tribunal.trycloudflare.com"
 embedded = true
 name = "Product sync"
 handle = "product-sync-52"
@@ -47,9 +47,9 @@ scopes = "write_products,write_orders,write_inventory,write_locations"
 
 [auth]
 redirect_urls = [
-  "https://medicare-stands-sudan-friendly.trycloudflare.com/auth/callback",
-  "https://medicare-stands-sudan-friendly.trycloudflare.com/auth/shopify/callback",
-  "https://medicare-stands-sudan-friendly.trycloudflare.com/api/auth/callback"
+  "https://rain-julian-downloads-tribunal.trycloudflare.com/auth/callback",
+  "https://rain-julian-downloads-tribunal.trycloudflare.com/auth/shopify/callback",
+  "https://rain-julian-downloads-tribunal.trycloudflare.com/api/auth/callback"
 ]
 
 [pos]

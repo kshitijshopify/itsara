@@ -281,37 +281,61 @@ export async function insertOrdersGroupedByDate(sheetTitle, orders) {
 
   // Process each date group
   for (const [date, ordersForDate] of Object.entries(grouped)) {
-    // If date already exists, add a blank row first
-    if (existingDates.has(date)) {
-      allRows.push([]);
+    // If date already exists, skip adding the date header
+    if (!existingDates.has(date)) {
+      // Add date header only if date doesn't exist
+      allRows.push([date]);
+      formatRequests.push({
+        repeatCell: {
+          range: {
+            sheetId,
+            startRowIndex: currentRowIndex,
+            endRowIndex: currentRowIndex + 1,
+          },
+          cell: {
+            userEnteredFormat: {
+              backgroundColor: { red: 0.9, green: 0.9, blue: 0.6 },
+              textFormat: { bold: true },
+            },
+          },
+          fields: "userEnteredFormat(backgroundColor,textFormat)",
+        },
+      });
       currentRowIndex++;
     }
 
-    // Add date header
-    allRows.push([date]);
-    formatRequests.push({
-      repeatCell: {
-        range: {
-          sheetId,
-          startRowIndex: currentRowIndex,
-          endRowIndex: currentRowIndex + 1,
-        },
-        cell: {
-          userEnteredFormat: {
-            backgroundColor: { red: 0.9, green: 0.9, blue: 0.6 },
-            textFormat: { bold: true },
-          },
-        },
-        fields: "userEnteredFormat(backgroundColor,textFormat)",
-      },
-    });
-    currentRowIndex++;
+    // Track processed order IDs to avoid duplicates
+    const processedOrderIds = new Set();
 
     // Add order rows for this date
     for (const order of ordersForDate) {
+      // Skip if we've already processed this order
+      if (processedOrderIds.has(order.orderId)) {
+        continue;
+      }
+      processedOrderIds.add(order.orderId);
+
+      // Track processed line items to avoid duplicates
+      const processedLineItems = new Set();
+
       for (const lineItem of order.lineItems) {
+        // Skip if we've already processed this line item
+        if (processedLineItems.has(lineItem.sku)) {
+          continue;
+        }
+        processedLineItems.add(lineItem.sku);
+
         if (lineItem.assigned_subskus && lineItem.assigned_subskus.length > 0) {
+          // Track processed subSKUs to avoid duplicates
+          const processedSubSKUs = new Set();
+
           for (const subSKU of lineItem.assigned_subskus) {
+            // Skip if we've already processed this subSKU
+            if (processedSubSKUs.has(subSKU)) {
+              continue;
+            }
+            processedSubSKUs.add(subSKU);
+
             allRows.push([
               order.name,
               order.orderId,
