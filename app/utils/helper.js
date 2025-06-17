@@ -917,26 +917,57 @@ export async function processWebhookPayloadWithSKUs(session, payload) {
     const lineItemsWithWeight = await Promise.all(payload.line_items.map(async (item) => {
       if (!item.variant_id) return item;
 
-      const query = `
-        query getVariantMetafield($id: ID!) {
-          productVariant(id: $id) {
-            id
-            metafield(namespace: "custom", key: "weight_in_gram") {
-              value
-            }
-          }
+      // Get variant details including weight from REST API
+      const variantResponse = await fetch(
+        `https://${session.shop}/admin/api/2025-01/variants/${item.variant_id}.json?fields=weight_unit,weight`,
+        {
+          headers: {
+            'X-Shopify-Access-Token': session.accessToken,
+          },
         }
-      `;
+      );
 
-      const response = await makeShopifyGraphQLRequest(session, query, {
-        id: `gid://shopify/ProductVariant/${item.variant_id}`
-      });
+      const variantData = await variantResponse.json();
+      const variant = variantData.variant;
+      console.log('variant', variant);
+      // const query = `
+      //   query getVariantMetafield($id: ID!) {
+      //     productVariant(id: $id) {
+      //       id
+      //       metafield(namespace: "custom", key: "weight_in_gram") {
+      //         value
+      //       }
+      //     }
+      //   }
+      // `;
 
-      const weight = response.data?.productVariant?.metafield?.value;
+      // const response = await makeShopifyGraphQLRequest(session, query, {
+      //   id: `gid://shopify/ProductVariant/${item.variant_id}`
+      // });
+
+      // const weight = response.data?.productVariant?.metafield?.value;
+      // Convert weight to grams based on weight unit
+      let weightInGrams = null;
+      if (variant?.weight && variant?.weight_unit) {
+        switch (variant.weight_unit.toLowerCase()) {
+          case 'kg':
+            weightInGrams = variant.weight * 1000;
+            break;
+          case 'g':
+            weightInGrams = variant.weight;
+            break;
+          case 'lb':
+            weightInGrams = variant.weight * 453.592;
+            break;
+          case 'oz':
+            weightInGrams = variant.weight * 28.3495;
+            break;
+        }
+      }
       
       return {
         ...item,
-        weight_in_gram: weight || null
+        weight_in_gram: weightInGrams || null,
       };
     }));
 
