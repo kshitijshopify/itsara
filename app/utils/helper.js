@@ -803,6 +803,42 @@ export async function processProductCreate(session, payload) {
       const sku = variant.sku;
       if (!sku) continue;
 
+      // Get variant weight using REST API
+      let weightInGrams = null;
+      try {
+        const variantResponse = await fetch(
+          `https://${session.shop}/admin/api/2025-01/variants/${variant.id}.json?fields=weight_unit,weight`,
+          {
+            headers: {
+              'X-Shopify-Access-Token': session.accessToken,
+            },
+          }
+        );
+
+        const variantData = await variantResponse.json();
+        const variantWeight = variantData.variant;
+
+        // Convert weight to grams based on weight unit
+        if (variantWeight?.weight && variantWeight?.weight_unit) {
+          switch (variantWeight.weight_unit.toLowerCase()) {
+            case 'kg':
+              weightInGrams = variantWeight.weight * 1000;
+              break;
+            case 'g':
+              weightInGrams = variantWeight.weight;
+              break;
+            case 'lb':
+              weightInGrams = variantWeight.weight * 453.592;
+              break;
+            case 'oz':
+              weightInGrams = variantWeight.weight * 28.3495;
+              break;
+          }
+        }
+      } catch (error) {
+        console.error(`Error fetching variant weight for ${sku}:`, error);
+      }
+
       // Create SKU if it doesn't exist
       let [skuData] = await getAvailableSKUs(sku);
       if (!skuData) {
@@ -826,7 +862,7 @@ export async function processProductCreate(session, payload) {
           sku, // SKU
           subSku.name, // Sub-SKU
           variant.title || "", // Variant
-          variant.weight || "", // Input Weight
+          weightInGrams || "", // Input Weight (in grams)
           "", // Input Reason
           "", // Free Handwritten Note
           "", // "Supplier Name"
