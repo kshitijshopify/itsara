@@ -115,20 +115,24 @@ export async function ensureSheetHasHeader() {
 export async function addSheetOrderHeader(sheets, sheetTitle) {
   const header = [
     [
+      "Date",
+      "Time(Paris Time Zone)",
       "Invoice Number",
-      "Order ID",
+      "Item Title",
+      "SKU",
+      "Sub-SKU",
+      "Variant",
+      "Selected Size",
+      "Output Weight",
+      "Output Reason",
+      "Free Handwritten Note",
       "Customer Name",
       "Email",
-      "Address",
       "Telephone",
-      "Total Price",
-      "Variant",
-      "Item SKU",
-      "Item Price",
-      "OUTPUT grm",
+      "Attachment pdf - jpg",
       "Supplier Name",
-      "Assigned SubSKUs",
-      "Selected Size"
+      "Supplier Address",
+      "ID session staff",
     ],
   ];
 
@@ -335,22 +339,33 @@ export async function insertOrdersGroupedByDate(sheetTitle, orders) {
               continue;
             }
             processedSubSKUs.add(subSKU);
-
+            const date = new Date(order.created_at);
+            const formattedTime = date.toLocaleTimeString('en-US', {
+              hour: '2-digit',
+              minute: '2-digit',
+              hour12: false
+            });
+             
+            
             allRows.push([
-              order.name,
-              order.orderId,
-              order.customerName,
-              order.email,
-              order.address,
-              order.phone,
-              order.totalPrice,
-              lineItem.variant,
-              lineItem.sku,
-              lineItem.price,
-              lineItem.weight,
-              lineItem.vendor,
-              subSKU,
-              getPropertyValue(lineItem.properties, "__selected_size")
+              "", // Date
+              formattedTime, // Time(Paris Time Zone)
+              order.name, // Invoice Number
+              lineItem.title, // Item Title
+              lineItem.sku, // SKU
+              subSKU, // Sub-SKU
+              lineItem.variant, // Variant
+              lineItem.selected_size, // Selected Size
+              lineItem.weight, // Output Weight
+              "", // Output Reason
+              "", // Free Handwritten Note
+              order.customerName, // Customer Name
+              order.email, // Email
+              order.phone, // Telephone
+              "", // Attachment pdf - jpg
+              lineItem.vendor, // Supplier Name (vendor)
+              "", // Supplier Address
+              "", // ID session staff
             ]);
             currentRowIndex++;
           }
@@ -359,7 +374,7 @@ export async function insertOrdersGroupedByDate(sheetTitle, orders) {
     }
 
     // Add empty row after each date group
-    allRows.push([]);
+    // allRows.push([]);
     currentRowIndex++;
   }
 
@@ -436,12 +451,12 @@ export function processWebhookPayload(payload, subSKUAssignments = []) {
     {
       name: payload.name,
       orderId: payload.id,
-      customerName: payload.customer ? payload.customer.first_name : "N/A",
+      customerName: payload.customer ? `${payload.customer.first_name} ${payload.customer.last_name}` : "N/A",
       email: payload.contact_email,
       address: payload.shipping_address
         ? payload.shipping_address.address1
         : "N/A",
-      phone: payload.phone,
+      phone: payload.shipping_address ? payload.shipping_address?.phone : payload.phone ? payload.phone : "N/A",
       totalPrice: payload.total_price,
       created_at: payload.created_at,
       lineItems: payload.line_items.map((lineItem) => {
@@ -460,6 +475,8 @@ export function processWebhookPayload(payload, subSKUAssignments = []) {
           assigned_subskus: subSKUs,
           vendor: lineItem.vendor,
           variant: lineItem.variant_title,
+          title: lineItem.title,
+          selected_size: getPropertyValue(lineItem.properties, "__selected_size")
         };
       }),
     },
