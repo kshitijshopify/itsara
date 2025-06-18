@@ -871,7 +871,7 @@ export async function processWebhookPayloadWithSKUs(session, payload) {
   try {
     // Check if this order has already been processed by looking up in the sheet
     const orderId = payload.id;
-    const sheetData = await getSheet("orders");
+    const sheetData = await getSheet("Orders");
     
     // Get all values from the sheet and skip header row
     const values = (sheetData.values || []).slice(1);
@@ -977,7 +977,7 @@ export async function processWebhookPayloadWithSKUs(session, payload) {
     const processedOrders = processWebhookPayload(payload, subSKUAssignments);
 
     console.log('payload line items updated with weight>>>>', payload.line_items);
-    await insertOrdersGroupedByDate("orders", processedOrders);
+    await insertOrdersGroupedByDate("Orders", processedOrders);
 
     return {
       success: true,
