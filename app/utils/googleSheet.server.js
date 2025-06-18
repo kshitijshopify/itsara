@@ -28,7 +28,7 @@ function getServiceAccountCredentials() {
   };
 }
 
-const auth = new google.auth.GoogleAuth({
+export const auth = new google.auth.GoogleAuth({
   credentials: getServiceAccountCredentials(),
   scopes: SCOPES,
 });

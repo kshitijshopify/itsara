@@ -10,11 +10,10 @@ import {
   addSheetOrderHeader,
   updateSubSkuWithOrderInfo,
   ensureSheetTabExists,
-  getSheetOrderHeader,
-  groupByDate
+  groupByDate,
+  auth
 } from "./googleSheet.server";
 import { makeShopifyGraphQLRequest } from "../utils/shopify.server";
-import { auth } from "../utils/auth.server";
 import { google } from "googleapis";
 import process from "process";
 
