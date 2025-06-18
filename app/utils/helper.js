@@ -761,20 +761,31 @@ export async function processProductCreate(session, payload) {
     const existingDates = await getExistingDatesFromSheet(sheets, "Inventory Updates");
 
     // Format the date from the payload
-    const productDate = new Date(payload.created_at);
+    const productDate = new Date(payload.updated_at || payload.created_at);
     const formattedDate = productDate.toISOString().split("T")[0];
     const timeParisZone = productDate.toLocaleTimeString('fr-FR', { timeZone: 'Europe/Paris' });
 
+    // Get the last row index
+    const existingData = await sheets.spreadsheets.values.get({
+      spreadsheetId: process.env.GOOGLE_SHEET_ID,
+      range: "Inventory Updates!A:Z",
+    });
+    const existingRows = existingData.data.values || [];
+    const lastRowIndex = existingRows.length;
+
     // If date doesn't exist, add it as a header
     if (!existingDates.has(formattedDate)) {
+      // Add date row to sheetData
       sheetData.push([formattedDate]);
+      
+      // Add formatting for the date row
       if (sheetId) {
         formatRequests.push({
           repeatCell: {
             range: {
               sheetId,
-              startRowIndex: sheetData.length - 1,
-              endRowIndex: sheetData.length,
+              startRowIndex: lastRowIndex,
+              endRowIndex: lastRowIndex + 1,
             },
             cell: {
               userEnteredFormat: {
@@ -829,14 +840,6 @@ export async function processProductCreate(session, payload) {
     if (sheetData.length > 0) {
       console.log(`Adding ${sheetData.length} rows to Google Sheet for product ${payload.title}`);
       
-      // Get the last row index
-      const existingData = await sheets.spreadsheets.values.get({
-        spreadsheetId: process.env.GOOGLE_SHEET_ID,
-        range: "Inventory Updates!A:Z",
-      });
-      const existingRows = existingData.data.values || [];
-      const lastRowIndex = existingRows.length;
-
       // Write the data
       await sheets.spreadsheets.values.update({
         spreadsheetId: process.env.GOOGLE_SHEET_ID,
