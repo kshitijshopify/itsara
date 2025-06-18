@@ -865,7 +865,7 @@ export async function processProductCreate(session, payload) {
           weightInGrams || "", // Input Weight (in grams)
           "", // Input Reason
           "", // Free Handwritten Note
-          "", // "Supplier Name"
+          payload.vendor, // "Supplier Name"
           "", // "Supplier Address"
         ]);
       });
