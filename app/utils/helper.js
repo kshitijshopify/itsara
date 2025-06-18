@@ -14,6 +14,9 @@ import {
   groupByDate
 } from "./googleSheet.server";
 import { makeShopifyGraphQLRequest } from "../utils/shopify.server";
+import { auth } from "../utils/auth.server";
+import { google } from "googleapis";
+import process from "process";
 
 export async function getAllLocations(session) {
   const query = `
@@ -745,10 +748,46 @@ export async function processProductCreate(session, payload) {
     const variants = payload.variants || [];
     const results = [];
     const sheetData = [];
-    const currentDate = new Date();
+    const formatRequests = [];
 
     // First ensure sheet has proper headers
     await ensureSheetHasHeader();
+
+    // Get the sheet ID for formatting
+    const authClient = await auth.getClient();
+    const sheets = google.sheets({ version: "v4", auth: authClient });
+    const sheetId = await getSheetId(sheets, "Inventory Updates");
+
+    // Get existing dates from the sheet
+    const existingDates = await getExistingDatesFromSheet(sheets, "Inventory Updates");
+
+    // Format the date from the payload
+    const productDate = new Date(payload.created_at);
+    const formattedDate = productDate.toISOString().split("T")[0];
+    const timeParisZone = productDate.toLocaleTimeString('fr-FR', { timeZone: 'Europe/Paris' });
+
+    // If date doesn't exist, add it as a header
+    if (!existingDates.has(formattedDate)) {
+      sheetData.push([formattedDate]);
+      if (sheetId) {
+        formatRequests.push({
+          repeatCell: {
+            range: {
+              sheetId,
+              startRowIndex: sheetData.length - 1,
+              endRowIndex: sheetData.length,
+            },
+            cell: {
+              userEnteredFormat: {
+                backgroundColor: { red: 0.9, green: 0.9, blue: 0.6 },
+                textFormat: { bold: true },
+              },
+            },
+            fields: "userEnteredFormat(backgroundColor,textFormat)",
+          },
+        });
+      }
+    }
 
     for (const variant of variants) {
       const sku = variant.sku;
@@ -771,23 +810,52 @@ export async function processProductCreate(session, payload) {
       // Add each subSKU as a separate row in the sheet
       skuData.availableSubSkus.forEach((subSku) => {
         sheetData.push([
-          payload.id, // Product ID
-          currentDate.toISOString()?.split('T')[0], // Date
-          currentDate.toLocaleTimeString(), // Time
-          "UTC", // Time zone
-          payload.title, // Product Title
-          sku, // Base SKU
+          "", // Empty date cell since we have the date header
+          timeParisZone, // Time (Paris Time Zone)
+          payload.title, // Item Title
+          sku, // SKU
           subSku.name, // Sub-SKU
-          variant.title || "",
+          variant.title || "", // Variant
+          variant.weight || "", // Input Weight
+          "", // Input Reason
+          "", // Free Handwritten Note
+          "", // "Supplier Name"
+          "", // "Supplier Address"
         ]);
       });
     }
 
     // Update Google Sheet with all the data
-    console.log(sheetData.length, "sheetData lenght");
+    console.log(sheetData.length, "sheetData length");
     if (sheetData.length > 0) {
       console.log(`Adding ${sheetData.length} rows to Google Sheet for product ${payload.title}`);
-      await upsertRowsToGoogleSheet(payload.id, sheetData);
+      
+      // Get the last row index
+      const existingData = await sheets.spreadsheets.values.get({
+        spreadsheetId: process.env.GOOGLE_SHEET_ID,
+        range: "Inventory Updates!A:Z",
+      });
+      const existingRows = existingData.data.values || [];
+      const lastRowIndex = existingRows.length;
+
+      // Write the data
+      await sheets.spreadsheets.values.update({
+        spreadsheetId: process.env.GOOGLE_SHEET_ID,
+        range: `Inventory Updates!A${lastRowIndex + 1}`,
+        valueInputOption: "USER_ENTERED",
+        requestBody: {
+          values: sheetData,
+        },
+      });
+
+      // Apply formatting if we have any format requests
+      if (formatRequests.length > 0) {
+        await sheets.spreadsheets.batchUpdate({
+          spreadsheetId: process.env.GOOGLE_SHEET_ID,
+          requestBody: { requests: formatRequests },
+        });
+      }
+
       console.log(`✅ Successfully updated Google Sheet with ${sheetData.length} rows`);
     }
 

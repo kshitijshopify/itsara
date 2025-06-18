@@ -40,7 +40,7 @@ export async function upsertRowsToGoogleSheet(productId, newRows) {
   // Step 1: Fetch all existing rows (excluding header)
   const getRes = await sheets.spreadsheets.values.get({
     spreadsheetId: SHEET_ID,
-    range: "Sheet1!A2:H",
+    range: "Inventory Updates!A2:H",
   });
 
   const existingRows = getRes.data.values || [];
@@ -56,13 +56,13 @@ export async function upsertRowsToGoogleSheet(productId, newRows) {
   // Step 4: Clear the entire data range (below header)
   await sheets.spreadsheets.values.clear({
     spreadsheetId: SHEET_ID,
-    range: "Sheet1!A2:H",
+    range: "Inventory Updates!A2:H",
   });
 
   // Step 5: Write all data back (clean sheet — no blanks)
   await sheets.spreadsheets.values.update({
     spreadsheetId: SHEET_ID,
-    range: "Sheet1!A2",
+    range: "Inventory Updates!A2",
     valueInputOption: "USER_ENTERED",
     requestBody: {
       values: updatedRows,
@@ -80,7 +80,7 @@ export async function ensureSheetHasHeader() {
 
   const res = await sheets.spreadsheets.values.get({
     spreadsheetId: SHEET_ID,
-    range: "Sheet1!A1:H1", // Adjust based on number of columns
+    range: "Inventory Updates!A1:H1", // Adjust based on number of columns
   });
 
   const headers = res.data.values?.[0] || [];
@@ -88,19 +88,22 @@ export async function ensureSheetHasHeader() {
   if (headers.length === 0) {
     await sheets.spreadsheets.values.update({
       spreadsheetId: SHEET_ID,
-      range: "Sheet1!A1",
+      range: "Inventory Updates!A1",
       valueInputOption: "USER_ENTERED",
       requestBody: {
         values: [
           [
-            "Product ID",
             "Date",
-            "TIME",
-            "Paris zone",
+            "Time (Paris Time Zone)",
             "Item Title",
             "SKU",
-            "Sub-SKU",
-            "Variant"
+            "Sub SKU",
+            "Variant",
+            "Input Weight",
+            "Input Reason",
+            "Free Handwritten Note",
+            "Supplier Name",
+            "Supplier Address"
           ],
         ],
       },
@@ -151,7 +154,7 @@ export async function updateSubSkuWithOrderInfo(sku, orderData) {
   // 1. Read the full data from sheet
   const getRes = await sheets.spreadsheets.values.get({
     spreadsheetId: SHEET_ID,
-    range: "Sheet1!A2:Z", // extend to Z to include extra columns
+    range: "Inventory Updates!A2:Z", // extend to Z to include extra columns
   });
 
   const rows = getRes.data.values || [];
@@ -168,7 +171,7 @@ export async function updateSubSkuWithOrderInfo(sku, orderData) {
 
     if (!orderIdCell) {
       // 3. First empty slot → update it
-      const updateRange = `Sheet1!I${index + 2}:M${index + 2}`; // I-M: Order ID to Phone
+      const updateRange = `Inventory Updates!I${index + 2}:M${index + 2}`; // I-M: Order ID to Phone
 
       const values = [
         [
@@ -339,17 +342,12 @@ export async function insertOrdersGroupedByDate(sheetTitle, orders) {
               continue;
             }
             processedSubSKUs.add(subSKU);
-            const date = new Date(order.created_at);
-            const formattedTime = date.toLocaleTimeString('en-US', {
-              hour: '2-digit',
-              minute: '2-digit',
-              hour12: false
-            });
-             
+            const timeParisZone = new Date(order.created_at).toLocaleTimeString('fr-FR', { timeZone: 'Europe/Paris' });
+            
             
             allRows.push([
               "", // Date
-              formattedTime, // Time(Paris Time Zone)
+              timeParisZone, // Time(Paris Time Zone)
               order.name, // Invoice Number
               lineItem.title, // Item Title
               lineItem.sku, // SKU

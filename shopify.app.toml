@@ -28,7 +28,7 @@ api_version = "2025-04"
   [[webhooks.subscriptions]]
   topics = [ "orders/cancelled" ]
   uri = "/webhooks/orders/cancelled"
-n =p[l,mlp]
+
   [[webhooks.subscriptions]]
   topics = [ "products/create", "products/update" ]
   uri = "/webhooks/products/create"
