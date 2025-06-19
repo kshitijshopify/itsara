@@ -31,3 +31,13 @@ model SKU {
   sku     String @unique  // Making sku field unique for upsert operations
   subSKU  Json[] // Array of objects with format: [{"name": "sku-00001", "status": "available"}]
 }
+
+model Product {
+  id          String   @id @default(auto()) @map("_id") @db.ObjectId
+  productId   String   @unique // Shopify product ID
+  title       String   // Product title
+  vendor      String?  // Product vendor
+  variants    Json[]   // Array of variant objects with title, weightInGram, quantity, sku
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}

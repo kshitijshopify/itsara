@@ -1,41 +1,45 @@
 # Learn more about configuring your app at https://shopify.dev/docs/apps/tools/cli/configuration
 
 client_id = "9e3d8cb192cb91a730d1af18d80c4324"
-application_url = "https://itsara-1.onrender.com"
+application_url = "https://taught-scales-marion-float.trycloudflare.com"
 embedded = true
 name = "Product sync"
 handle = "product-sync-52"
 
 [build]
-include_config_on_deploy = true
 automatically_update_urls_on_dev = true
+include_config_on_deploy = true
 
 [webhooks]
 api_version = "2025-04"
-
-  [[webhooks.subscriptions]]
-  topics = [ "app/uninstalled" ]
-  uri = "/webhooks/app/uninstalled"
 
   [[webhooks.subscriptions]]
   topics = [ "app/scopes_update" ]
   uri = "/webhooks/app/scopes_update"
 
   [[webhooks.subscriptions]]
-  topics = [ "orders/create" ]
-  uri = "/webhooks/orders/create"
+  topics = [ "app/uninstalled" ]
+  uri = "/webhooks/app/uninstalled"
+
+  [[webhooks.subscriptions]]
+  topics = [ "inventory_levels/update" ]
+  uri = "/webhooks/inventory_levels/update"
 
   [[webhooks.subscriptions]]
   topics = [ "orders/cancelled" ]
   uri = "/webhooks/orders/cancelled"
 
   [[webhooks.subscriptions]]
-  topics = [ "products/create", "products/update" ]
+  topics = [ "orders/create" ]
+  uri = "/webhooks/orders/create"
+
+  [[webhooks.subscriptions]]
+  topics = [ "products/create" ]
   uri = "/webhooks/products/create"
 
   [[webhooks.subscriptions]]
-  topics = [ "inventory_levels/update" ]
-  uri = "/webhooks/inventory_levels/update"
+  topics = [ "products/update" ]
+  uri = "/webhooks/products/update"
 
   [[webhooks.subscriptions]]
   topics = [ "refunds/create" ]
@@ -43,15 +47,14 @@ api_version = "2025-04"
 
 [access_scopes]
 # Learn more at https://shopify.dev/docs/apps/tools/cli/configuration#access_scopes
-scopes = "write_products,write_orders,write_inventory,write_locations"
+scopes = "write_inventory,write_locations,write_orders,write_products"
 
 [auth]
 redirect_urls = [
-  "https://itsara-1.onrender.com/auth/callback",
-  "https://itsara-1.onrender.com/auth/shopify/callback",
-  "https://itsara-1.onrender.com/api/auth/callback"
+  "https://taught-scales-marion-float.trycloudflare.com/auth/callback",
+  "https://taught-scales-marion-float.trycloudflare.com/auth/shopify/callback",
+  "https://taught-scales-marion-float.trycloudflare.com/api/auth/callback"
 ]
 
 [pos]
 embedded = false
- 

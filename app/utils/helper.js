@@ -799,6 +799,9 @@ export async function processProductCreate(session, payload) {
       }
     }
 
+    // Prepare variants with weight data for database storage
+    const variantsWithWeight = [];
+
     for (const variant of variants) {
       const sku = variant.sku;
       if (!sku) continue;
@@ -838,6 +841,12 @@ export async function processProductCreate(session, payload) {
       } catch (error) {
         console.error(`Error fetching variant weight for ${sku}:`, error);
       }
+
+      // Store variant with weight for database
+      variantsWithWeight.push({
+        ...variant,
+        weight_in_gram: weightInGrams || 0
+      });
 
       // Create SKU if it doesn't exist
       let [skuData] = await getAvailableSKUs(sku);
@@ -896,6 +905,13 @@ export async function processProductCreate(session, payload) {
 
       console.log(`✅ Successfully updated Google Sheet with ${sheetData.length} rows`);
     }
+
+    // Save product data to database
+    const payloadWithWeight = {
+      ...payload,
+      variants: variantsWithWeight
+    };
+    await saveProductToDatabase(payloadWithWeight);
 
     return {
       success: true,
@@ -2075,5 +2091,295 @@ export async function getVariantLengthBySKU(session, sku) {
   } catch (error) {
     console.error(`Error getting variant length for SKU ${sku}:`, error);
     throw error;
+  }
+}
+
+/**
+ * Save or update product data in the database
+ * @param {object} payload - Product webhook payload
+ * @returns {Promise<Object>} - Returns the saved/updated product object
+ */
+export async function saveProductToDatabase(payload) {
+  try {
+    const variants = payload.variants || [];
+    const processedVariants = [];
+
+    for (const variant of variants) {
+      // For database storage, we'll use the weight data if available in the payload
+      // or set to 0 if not available (weight fetching will be done in the calling functions)
+      processedVariants.push({
+        title: variant.title || "",
+        weightInGram: variant.weight_in_gram || 0, // Use weight if available in payload
+        quantity: variant.inventory_quantity || 0,
+        sku: variant.sku || ""
+      });
+    }
+
+    // Upsert product data
+    const product = await db.Product.upsert({
+      where: { productId: payload.id.toString() },
+      update: {
+        title: payload.title,
+        vendor: payload.vendor,
+        variants: processedVariants,
+        updatedAt: new Date()
+      },
+      create: {
+        productId: payload.id.toString(),
+        title: payload.title,
+        vendor: payload.vendor,
+        variants: processedVariants
+      }
+    });
+
+    console.log(`✅ Product ${payload.title} saved to database`);
+    return product;
+  } catch (error) {
+    console.error("Error saving product to database:", error);
+    throw error;
+  }
+}
+
+/**
+ * Get product data from database
+ * @param {string} productId - Shopify product ID
+ * @returns {Promise<Object|null>} - Returns the product object or null
+ */
+export async function getProductFromDatabase(productId) {
+  try {
+    const product = await db.Product.findUnique({
+      where: { productId: productId.toString() }
+    });
+    return product;
+  } catch (error) {
+    console.error("Error getting product from database:", error);
+    return null;
+  }
+}
+
+/**
+ * Process product update webhook - only append new subSKUs when inventory increases
+ * @param {object} session - Shopify session client
+ * @param {object} payload - Product update webhook payload
+ */
+export async function processProductUpdate(session, payload) {
+  try {
+    console.log('🔄 Processing product update:', {
+      productId: payload.id,
+      title: payload.title
+    });
+
+    const variants = payload.variants || [];
+    const results = [];
+    const sheetData = [];
+
+    // Get existing product data from database
+    const existingProduct = await getProductFromDatabase(payload.id);
+    
+    if (!existingProduct) {
+      console.log('⚠️ Product not found in database, treating as new product');
+      // For new products, we'll handle it here instead of calling processProductCreate
+      // to ensure we only add the new subSKUs, not all of them
+    }
+
+    // First ensure sheet has proper headers
+    await ensureSheetHasHeader();
+
+    // Get the sheet ID for formatting
+    const authClient = await auth.getClient();
+    const sheets = google.sheets({ version: "v4", auth: authClient });
+    const sheetId = await getSheetId(sheets, "Inventory Updates");
+
+    // Get existing dates from the sheet
+    const existingDates = await getExistingDatesFromSheet(sheets, "Inventory Updates");
+
+    // Format the date from the payload
+    const productDate = new Date(payload.updated_at || payload.created_at);
+    const formattedDate = productDate.toISOString().split("T")[0];
+    const timeParisZone = productDate.toLocaleTimeString('fr-FR', { timeZone: 'Europe/Paris' });
+
+    // Get the last row index
+    const existingData = await sheets.spreadsheets.values.get({
+      spreadsheetId: process.env.GOOGLE_SHEET_ID,
+      range: "Inventory Updates!A:Z",
+    });
+    const existingRows = existingData.data.values || [];
+    const lastRowIndex = existingRows.length;
+
+    // If date doesn't exist, add it as a header
+    if (!existingDates.has(formattedDate)) {
+      // Add date row to sheetData
+      sheetData.push([formattedDate]);
+      
+      // Add formatting for the date row
+      if (sheetId) {
+        const formatRequests = [{
+          repeatCell: {
+            range: {
+              sheetId,
+              startRowIndex: lastRowIndex,
+              endRowIndex: lastRowIndex + 1,
+            },
+            cell: {
+              userEnteredFormat: {
+                backgroundColor: { red: 0.9, green: 0.9, blue: 0.6 },
+                textFormat: { bold: true },
+              },
+            },
+            fields: "userEnteredFormat(backgroundColor,textFormat)",
+          },
+        }];
+
+        await sheets.spreadsheets.batchUpdate({
+          spreadsheetId: process.env.GOOGLE_SHEET_ID,
+          requestBody: { requests: formatRequests },
+        });
+      }
+    }
+
+    for (const variant of payload.variants || []) {
+      const sku = variant.sku;
+      if (!sku) continue;
+
+      // Get variant weight using REST API
+      let weightInGrams = null;
+      try {
+        const variantResponse = await fetch(
+          `https://${session.shop}/admin/api/2025-01/variants/${variant.id}.json?fields=weight_unit,weight`,
+          {
+            headers: {
+              'X-Shopify-Access-Token': session.accessToken,
+            },
+          }
+        );
+
+        const variantData = await variantResponse.json();
+        const variantWeight = variantData.variant;
+
+        // Convert weight to grams based on weight unit
+        if (variantWeight?.weight && variantWeight?.weight_unit) {
+          switch (variantWeight.weight_unit.toLowerCase()) {
+            case 'kg':
+              weightInGrams = variantWeight.weight * 1000;
+              break;
+            case 'g':
+              weightInGrams = variantWeight.weight;
+              break;
+            case 'lb':
+              weightInGrams = variantWeight.weight * 453.592;
+              break;
+            case 'oz':
+              weightInGrams = variantWeight.weight * 28.3495;
+              break;
+          }
+        }
+      } catch (error) {
+        console.error(`Error fetching variant weight for ${sku}:`, error);
+      }
+
+      // Find existing variant data from the product database
+      const existingVariant = existingProduct ? existingProduct.variants.find(v => v.sku === sku) : null;
+      const newQuantity = variant.inventory_quantity || 0;
+      const oldQuantity = existingVariant ? existingVariant.quantity : 0;
+
+      console.log('📊 Quantity comparison for SKU:', {
+        sku,
+        oldQuantity,
+        newQuantity,
+        difference: newQuantity - oldQuantity,
+        isNewProduct: !existingProduct
+      });
+
+      // For new products, treat all quantity as new
+      // For existing products, only process if inventory increased
+      if (!existingProduct || newQuantity > oldQuantity) {
+        const quantityIncrease = existingProduct ? (newQuantity - oldQuantity) : newQuantity;
+        
+        console.log('➕ Processing inventory:', {
+          sku,
+          increase: quantityIncrease,
+          from: oldQuantity,
+          to: newQuantity,
+          isNewProduct: !existingProduct
+        });
+
+        // Generate new subSKU names directly
+        const newSubSKUNames = [];
+        for (let i = 1; i <= quantityIncrease; i++) {
+          const subSKUNumber = String(oldQuantity + i).padStart(4, "0");
+          newSubSKUNames.push(`${sku}-${subSKUNumber}`);
+        }
+
+        console.log('🆕 Generated new subSKU names:', {
+          sku,
+          newSubSKUNames,
+          count: newSubSKUNames.length
+        });
+
+        results.push({
+          sku,
+          success: true,
+          quantityIncrease,
+          newSubSKUs: newSubSKUNames
+        });
+
+        // Add only the new subSKUs to the sheet
+        newSubSKUNames.forEach((subSkuName) => {
+          sheetData.push([
+            "", // Empty date cell since we have the date header
+            timeParisZone, // Time (Paris Time Zone)
+            payload.title, // Item Title
+            sku, // SKU
+            subSkuName, // Sub-SKU
+            variant.title || "", // Variant
+            weightInGrams || "", // Input Weight (in grams)
+            "Inventory Update", // Input Reason
+            "", // Free Handwritten Note
+            payload.vendor, // "Supplier Name"
+            "", // "Supplier Address"
+          ]);
+        });
+      } else {
+        console.log('ℹ️ No inventory increase for SKU:', {
+          sku,
+          oldQuantity,
+          newQuantity
+        });
+      }
+    }
+
+    // Update Google Sheet with new data only
+    if (sheetData.length > 0) {
+      console.log(`Adding ${sheetData.length} new rows to Google Sheet for product update ${payload.title}`);
+      
+      // Write the data
+      await sheets.spreadsheets.values.update({
+        spreadsheetId: process.env.GOOGLE_SHEET_ID,
+        range: `Inventory Updates!A${lastRowIndex + 1}`,
+        valueInputOption: "USER_ENTERED",
+        requestBody: {
+          values: sheetData,
+        },
+      });
+
+      console.log(`✅ Successfully updated Google Sheet with ${sheetData.length} new rows`);
+    }
+
+    // Update product data in database
+    await saveProductToDatabase(payload);
+
+    return {
+      success: true,
+      data: {
+        results,
+        sheetRowsAdded: sheetData.length,
+      },
+    };
+  } catch (error) {
+    console.error("Error processing product update:", error);
+    return {
+      success: false,
+      error: error.message,
+    };
   }
 }

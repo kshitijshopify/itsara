@@ -1,4 +1,4 @@
-import { processInventoryLevelUpdate, processOrderCancellation, processProductCreate, processWebhookPayloadWithSKUs, processRefund } from "../utils/helper";
+import { processInventoryLevelUpdate, processOrderCancellation, processProductCreate, processProductUpdate, processWebhookPayloadWithSKUs, processRefund } from "../utils/helper";
 
 // Single worker to process all webhook types
 export const processWebhook = async (job) => {
@@ -36,6 +36,12 @@ export const processWebhook = async (job) => {
                 // await new Promise(resolve => setTimeout(resolve, 15000));
                 break;
 
+            case "product_update":
+                console.log(">>> 🔄 Processing product update");
+                result = await processProductUpdate(session, payload);
+                // await new Promise(resolve => setTimeout(resolve, 15000));
+                break;
+
             case "refund_create":
                 console.log(">>> 💰 Processing refund");
                 result = await processRefund(session, payload);
@@ -62,6 +68,9 @@ export const processWebhook = async (job) => {
             error: error.message,
             stack: error.stack,
         });
-        throw error;
+        return {
+            success: false,
+            error: error.message,
+        };
     }
 };
