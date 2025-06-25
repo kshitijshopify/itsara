@@ -136,6 +136,7 @@ export async function addSheetOrderHeader(sheets, sheetTitle) {
       "Supplier Name",
       "Supplier Address",
       "ID session staff",
+      "Note",
     ],
   ];
 
@@ -364,6 +365,7 @@ export async function insertOrdersGroupedByDate(sheetTitle, orders) {
               lineItem.vendor, // Supplier Name (vendor)
               "", // Supplier Address
               "", // ID session staff
+              "", // Note
             ]);
             currentRowIndex++;
           }

@@ -1,7 +1,7 @@
 # Learn more about configuring your app at https://shopify.dev/docs/apps/tools/cli/configuration
 
 client_id = "9e3d8cb192cb91a730d1af18d80c4324"
-application_url = "https://taught-scales-marion-float.trycloudflare.com"
+application_url = "https://addresses-reaction-cash-advocacy.trycloudflare.com"
 embedded = true
 name = "Product sync"
 handle = "product-sync-52"
@@ -45,15 +45,19 @@ api_version = "2025-04"
   topics = [ "refunds/create" ]
   uri = "/webhooks/refunds/create"
 
+  [[webhooks.subscriptions]]
+  topics = [ "orders/edited" ]
+  uri = "/webhooks/orders/edited"
+
 [access_scopes]
 # Learn more at https://shopify.dev/docs/apps/tools/cli/configuration#access_scopes
-scopes = "write_inventory,write_locations,write_orders,write_products"
+scopes = "write_inventory,write_locations,write_orders,write_products,write_customers"
 
 [auth]
 redirect_urls = [
-  "https://taught-scales-marion-float.trycloudflare.com/auth/callback",
-  "https://taught-scales-marion-float.trycloudflare.com/auth/shopify/callback",
-  "https://taught-scales-marion-float.trycloudflare.com/api/auth/callback"
+  "https://addresses-reaction-cash-advocacy.trycloudflare.com/auth/callback",
+  "https://addresses-reaction-cash-advocacy.trycloudflare.com/auth/shopify/callback",
+  "https://addresses-reaction-cash-advocacy.trycloudflare.com/api/auth/callback"
 ]
 
 [pos]

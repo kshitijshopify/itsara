@@ -108,7 +108,7 @@ The database is defined as a Prisma schema in `prisma/schema.prisma`.
 This use of SQLite works in production if your app runs as a single instance.
 The database that works best for you depends on the data your app needs and how it is queried.
 You can run your database of choice on a server yourself or host it with a SaaS company.
-Here’s a short list of databases providers that provide a free tier to get started:
+Here's a short list of databases providers that provide a free tier to get started:
 
 | Database   | Type             | Hosters                                                                                                                                                                                                                               |
 | ---------- | ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -156,7 +156,7 @@ Using the Vercel Preset is recommended when hosting your Shopify Remix app on Ve
 import { vitePlugin as remix } from "@remix-run/dev";
 import { defineConfig, type UserConfig } from "vite";
 import tsconfigPaths from "vite-tsconfig-paths";
-+ import { vercelPreset } from '@vercel/remix/vite';
+import { vercelPreset } from '@vercel/remix/vite';
 
 installGlobals();
 
@@ -164,7 +164,7 @@ export default defineConfig({
   plugins: [
     remix({
       ignoredRouteFiles: ["**/.*"],
-+     presets: [vercelPreset()],
+      presets: [vercelPreset()],
     }),
     tsconfigPaths(),
   ],
@@ -367,3 +367,138 @@ This template uses [Remix](https://remix.run). The following Shopify tools are a
 - [App extensions](https://shopify.dev/docs/apps/app-extensions/list)
 - [Shopify Functions](https://shopify.dev/docs/api/functions)
 - [Getting started with internationalizing your app](https://shopify.dev/docs/apps/best-practices/internationalization/getting-started)
+
+# Itsara Shopify App
+
+A Shopify app for managing inventory and orders with SKU tracking and Google Sheets integration.
+
+## Features
+
+- **Inventory Management**: Track SKUs and sub-SKUs with availability status
+- **Order Processing**: Automatically assign sub-SKUs to orders
+- **Google Sheets Integration**: Sync order and inventory data to Google Sheets
+- **Webhook Support**: Handle various Shopify webhooks for real-time updates
+
+## Webhooks
+
+The app supports the following webhooks:
+
+### Order Webhooks
+
+- **`orders/create`**: Process new orders and assign sub-SKUs
+- **`orders/cancelled`**: Handle order cancellations and restock inventory
+- **`orders/edited`**: Handle order edits including additions and removals
+- **`refunds/create`**: Process refunds and restock inventory
+
+### Product Webhooks
+
+- **`products/create`**: Add new products to the system
+- **`products/update`**: Update existing product information
+
+### Inventory Webhooks
+
+- **`inventory_levels/update`**: Sync inventory level changes
+
+## Google Sheets Integration
+
+The app automatically updates Google Sheets for various order events:
+
+### Order Creation
+- Adds new rows to the Orders sheet
+- Assigns sub-SKUs to line items
+- Includes customer information and order details
+
+### Order Cancellation
+- Updates existing order rows with negative quantities
+- Makes price and weight values negative
+- Applies dark red background color to indicate cancellation
+- Restocks inventory by marking sub-SKUs as available
+
+### Order Edits
+- **Additions**: Positive quantities with green background
+- **Removals**: Negative quantities with red background
+- **Complete Cancellation**: All items marked as cancelled with darker red background
+
+### Refunds
+- Updates order rows with negative refund quantities
+- Makes price and weight values negative
+- Applies light red background color to indicate refunds
+- Restocks inventory for refunded items
+
+### Visual Indicators
+- **Green Background**: Item additions
+- **Light Red Background**: Item removals and refunds
+- **Dark Red Background**: Complete order cancellations
+- **Red Text**: All cancelled/refunded items
+
+## Order Edit Webhook
+
+The `orders/edited` webhook handles order modifications with the following features:
+
+### Supported Operations
+
+1. **Item Additions**: When items are added to an order
+   - Assigns new sub-SKUs from available inventory
+   - Updates Google Sheets with positive quantities
+   - Applies green background color to indicate additions
+
+2. **Item Removals**: When items are removed from an order
+   - Marks subSKUs as available again
+   - Updates Google Sheets with negative quantities
+   - Applies red background color to indicate removals
+   - Makes price and weight values negative
+
+3. **Complete Order Cancellation**: When all items are removed
+   - Marks all assigned subSKUs as available
+   - Updates all order rows in Google Sheets with negative values
+   - Applies darker red background color
+
+### Sample Payload
+
+```json
+{
+  "order_edit": {
+    "id": 78912328793123782,
+    "order_id": 820982911946154508,
+    "line_items": {
+      "additions": [
+        {
+          "id": 78643924236718232,
+          "delta": 1
+        }
+      ],
+      "removals": [
+        {
+          "id": 487817672276298554,
+          "delta": 1
+        }
+      ]
+    }
+  }
+}
+```
+
+## Environment Variables
+
+Required environment variables:
+
+- `GOOGLE_SHEET_ID`: Google Sheets spreadsheet ID
+- `GOOGLE_CLIENT_EMAIL`: Google service account email
+- `GOOGLE_PRIVATE_KEY`: Google service account private key
+- `GOOGLE_PROJECT_ID`: Google project ID
+- Other Google service account credentials
+
+## Installation
+
+1. Clone the repository
+2. Install dependencies: `npm install`
+3. Set up environment variables
+4. Run the development server: `npm run dev`
+
+## Development
+
+The app is built with:
+- Remix (React framework)
+- Prisma (Database ORM)
+- Google Sheets API
+- Shopify Admin API

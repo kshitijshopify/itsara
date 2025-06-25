@@ -1,4 +1,4 @@
-import { processInventoryLevelUpdate, processOrderCancellation, processProductCreate, processProductUpdate, processWebhookPayloadWithSKUs, processRefund } from "../utils/helper";
+import { processInventoryLevelUpdate, processOrderCancellation, processProductCreate, processProductUpdate, processWebhookPayloadWithSKUs, processRefund, processOrderEdit } from "../utils/helper";
 
 // Single worker to process all webhook types
 export const processWebhook = async (job) => {
@@ -45,6 +45,11 @@ export const processWebhook = async (job) => {
             case "refund_create":
                 console.log(">>> 💰 Processing refund");
                 result = await processRefund(session, payload);
+                break;
+
+            case "order_edited":
+                console.log(">>> ✏️ Processing order edit");
+                result = await processOrderEdit(session, payload);
                 break;
 
             default:

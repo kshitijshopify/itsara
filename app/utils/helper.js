@@ -1424,6 +1424,15 @@ export async function processOrderCancellation(session, payload, type = "cancell
       query getOrder($id: ID!) {
         order(id: $id) {
           id
+          name
+          email
+          phone
+          customer {
+            firstName
+            lastName
+            email
+            phone
+          }
           metafields(first: 10, namespace: "sku_tracking") {
             edges {
               node {
@@ -1437,7 +1446,11 @@ export async function processOrderCancellation(session, payload, type = "cancell
               id
               sku
               quantity
+              title
+              variantTitle
               variant {
+                id
+                title
                 inventoryItem {
                   id
                   sku
@@ -1524,13 +1537,15 @@ export async function processOrderCancellation(session, payload, type = "cancell
         lineItemId,
         assignedSubSKUsCount: lineItemSubSKUs.length,
         subSKUs: lineItemSubSKUs,
-        availableKeys: Object.keys(assignedSubSKUs)
+        availableKeys: Object.keys(assignedSubSKUs),
+        assignedSubSKUs: JSON.stringify(assignedSubSKUs)
       });
 
       if (lineItemSubSKUs.length == 0) {
-        console.log('⚠️ No subSKUs assigned to line item:', {
+        console.log('⚠️ No subSKUs assigned to line item cancelled:', {
           lineItemId,
-          availableInventoryItems: Object.keys(assignedSubSKUs)
+          availableInventoryItems: Object.keys(assignedSubSKUs),
+          assignedSubSKUs: JSON.stringify(assignedSubSKUs)
         });
         return null;
       }
@@ -1623,6 +1638,86 @@ export async function processOrderCancellation(session, payload, type = "cancell
       result => result !== null
     );
 
+    console.log('🔍 order cancellation results:', results);
+
+    // Prepare sheet data for cancelled items
+    const sheetData = [];
+    for (const result of results) {
+      if (!result.success) continue;
+      const { sku, lineItemId, markedAvailable } = result;
+      // Find the line item in the order
+      const lineItem = order.lineItems.nodes.find(
+        node => {
+          const nodeId = node.id.includes('gid://') 
+            ? node.id.split('/').pop() 
+            : node.id;
+          return nodeId === lineItemId.toString();
+        }
+      );
+      if (!lineItem) continue;
+
+      // Get variant weight
+      let weightInGrams = null;
+      try {
+        const variantResponse = await fetch(
+          `https://${session.shop}/admin/api/2025-01/variants/${lineItem.variant.id.split('/').pop()}.json?fields=weight_unit,weight`,
+          {
+            headers: {
+              'X-Shopify-Access-Token': session.accessToken,
+            },
+          }
+        );
+
+        const variantData = await variantResponse.json();
+        const variant = variantData.variant;
+
+        if (variant?.weight && variant?.weight_unit) {
+          switch (variant.weight_unit.toLowerCase()) {
+            case 'kg':
+              weightInGrams = variant.weight * 1000;
+              break;
+            case 'g':
+              weightInGrams = variant.weight;
+              break;
+            case 'lb':
+              weightInGrams = variant.weight * 453.592;
+              break;
+            case 'oz':
+              weightInGrams = variant.weight * 28.3495;
+              break;
+          }
+        }
+      } catch (error) {
+        console.error(`Error fetching variant weight for ${sku}:`, error);
+      }
+      // Add to sheet data for each subSKU being returned
+      const currentDate = order.createdAt ? new Date(order.createdAt) : new Date();
+      const timeParisZone = currentDate.toLocaleTimeString('fr-FR', { timeZone: 'Europe/Paris' });
+      markedAvailable.forEach((subSkuName) => {
+        sheetData.push([
+          "", // Date
+          timeParisZone, // Time (Paris Time Zone)
+          order.name, // Invoice Number
+          lineItem.title, // Item Title
+          sku, // SKU
+          subSkuName, // Sub-SKU
+          lineItem.variantTitle || "", // Variant
+          "", // Selected Size
+          weightInGrams || "", // Output Weight
+          "Order Cancelled", // Output Reason
+          "", // Free Handwritten Note
+          `${order.customer?.firstName || ""} ${order.customer?.lastName || ""}`.trim(), // Customer Name
+          order.customer?.email || "", // Email
+          order.customer?.phone || "", // Telephone
+          "", // Attachment pdf - jpg
+          "", // Supplier Name
+          "", // Supplier Address
+          "", // ID session staff
+          `Order Cancelled ID: ${payload.id}`, // Note
+        ]);
+      });
+    }
+
     // Update the metafields with the remaining assigned subSKUs
     const mutation = `
       mutation createOrderMetafields($metafields: [MetafieldsSetInput!]!) {
@@ -1653,6 +1748,64 @@ export async function processOrderCancellation(session, payload, type = "cancell
     };
 
     await makeShopifyGraphQLRequest(session, mutation, metafieldInput);
+
+    // Append data to Google Sheet
+    if (sheetData.length > 0) {
+      console.log(`📊 Appending ${sheetData.length} rows to Orders sheet for order cancelled ${payload.id}`);
+      const authClient = await auth.getClient();
+      const sheets = google.sheets({ version: "v4", auth: authClient });
+      const existingData = await sheets.spreadsheets.values.get({
+        spreadsheetId: process.env.GOOGLE_SHEET_ID,
+        range: "Orders!A:Z",
+      });
+      const existingRows = existingData.data.values || [];
+      const lastRowIndex = existingRows.length;
+      await sheets.spreadsheets.values.update({
+        spreadsheetId: process.env.GOOGLE_SHEET_ID,
+        range: `Orders!A${lastRowIndex + 1}`,
+        valueInputOption: "USER_ENTERED",
+        requestBody: {
+          values: sheetData,
+        },
+      });
+
+      // Apply dark red background color for cancelled orders
+      const formatRequests = [];
+      let currentRow = lastRowIndex + 1;
+
+      for (const row of sheetData) {
+        formatRequests.push({
+          repeatCell: {
+            range: {
+              sheetId: await getSheetId(sheets, "Orders"),
+              startRowIndex: currentRow - 1,
+              endRowIndex: currentRow,
+              startColumnIndex: 0,
+              endColumnIndex: 19, // All columns
+            },
+            cell: {
+              userEnteredFormat: {
+                backgroundColor: { red: 0.8, green: 0.2, blue: 0.2 }, // Dark red
+                textFormat: { 
+                  foregroundColor: { red: 1, green: 1, blue: 1 } // White text
+                }
+              },
+            },
+            fields: "userEnteredFormat(backgroundColor)",
+          },
+        });
+        currentRow++;
+      }
+
+      // Apply formatting
+      await sheets.spreadsheets.batchUpdate({
+        spreadsheetId: process.env.GOOGLE_SHEET_ID,
+        requestBody: { requests: formatRequests },
+      });
+      console.log(`✅ Applied dark red background colors to ${formatRequests.length} rows`);
+
+      console.log(`✅ Successfully appended ${sheetData.length} rows to Orders sheet`);
+    }
 
     console.log('✅ Order cancellation completed:', {
       orderId: payload.id,
@@ -1698,6 +1851,15 @@ export async function processRefund(session, payload) {
       query getOrder($id: ID!) {
         order(id: $id) {
           id
+          name
+          email
+          phone
+          customer {
+            firstName
+            lastName
+            email
+            phone
+          }
           metafields(first: 10, namespace: "sku_tracking") {
             edges {
               node {
@@ -1711,7 +1873,11 @@ export async function processRefund(session, payload) {
               id
               sku
               quantity
+              title
+              variantTitle
               variant {
+                id
+                title
                 inventoryItem {
                   id
                   sku
@@ -1864,13 +2030,15 @@ export async function processRefund(session, payload) {
         lineItemId,
         assignedSubSKUsCount: lineItemSubSKUs.length,
         subSKUs: lineItemSubSKUs,
-        availableKeys: Object.keys(assignedSubSKUs)
+        availableKeys: Object.keys(assignedSubSKUs),
+        assignedSubSKUs: JSON.stringify(assignedSubSKUs)
       });
 
       if (lineItemSubSKUs.length == 0) {
-        console.log('⚠️ No subSKUs assigned to line item:', {
+        console.log('⚠️ No subSKUs assigned to line item refund:', {
           lineItemId,
-          availableInventoryItems: Object.keys(assignedSubSKUs)
+          availableInventoryItems: Object.keys(assignedSubSKUs),
+          assignedSubSKUs: JSON.stringify(assignedSubSKUs)
         });
         return null;
       }
@@ -2021,11 +2189,151 @@ export async function processRefund(session, payload) {
 
     await makeShopifyGraphQLRequest(session, mutation, metafieldInput);
 
+    // Prepare sheet data for refunded items
+    const sheetData = [];
+    for (const result of results) {
+      if (!result.success) continue;
+      const { sku, lineItemId, markedAvailable } = result;
+      
+      // Find the line item in the order
+      const lineItem = order.lineItems.nodes.find(
+        node => {
+          const nodeId = node.id.includes('gid://') 
+            ? node.id.split('/').pop() 
+            : node.id;
+          return nodeId === lineItemId.toString();
+        }
+      );
+      if (!lineItem) continue;
+
+      // Get variant weight
+      let weightInGrams = null;
+      try {
+        const variantResponse = await fetch(
+          `https://${session.shop}/admin/api/2025-01/variants/${lineItem.variant.id.split('/').pop()}.json?fields=weight_unit,weight`,
+          {
+            headers: {
+              'X-Shopify-Access-Token': session.accessToken,
+            },
+          }
+        );
+
+        const variantData = await variantResponse.json();
+        const variant = variantData.variant;
+
+        if (variant?.weight && variant?.weight_unit) {
+          switch (variant.weight_unit.toLowerCase()) {
+            case 'kg':
+              weightInGrams = variant.weight * 1000;
+              break;
+            case 'g':
+              weightInGrams = variant.weight;
+              break;
+            case 'lb':
+              weightInGrams = variant.weight * 453.592;
+              break;
+            case 'oz':
+              weightInGrams = variant.weight * 28.3495;
+              break;
+          }
+        }
+      } catch (error) {
+        console.error(`Error fetching variant weight for ${sku}:`, error);
+      }
+
+      // Add to sheet data for each subSKU being returned
+      const currentDate = new Date();
+      const timeParisZone = currentDate.toLocaleTimeString('fr-FR', { timeZone: 'Europe/Paris' });
+      
+      markedAvailable.forEach((subSkuName) => {
+        sheetData.push([
+          "", // Date
+          timeParisZone, // Time (Paris Time Zone)
+          order.name, // Invoice Number
+          lineItem.title, // Item Title
+          sku, // SKU
+          subSkuName, // Sub-SKU
+          lineItem.variantTitle || "", // Variant
+          "", // Selected Size
+          weightInGrams || "", // Output Weight
+          "Order Refunded", // Output Reason
+          "", // Free Handwritten Note
+          `${order.customer?.firstName || ""} ${order.customer?.lastName || ""}`.trim(), // Customer Name
+          order.customer?.email || "", // Email
+          order.customer?.phone || "", // Telephone
+          "", // Attachment pdf - jpg
+          "", // Supplier Name
+          "", // Supplier Address
+          "", // ID session staff
+          `Refund ID: ${payload.id}`, // Note
+        ]);
+      });
+    }
+
+    // Append data to Google Sheet
+    if (sheetData.length > 0) {
+      console.log(`📊 Appending ${sheetData.length} rows to Orders sheet for refund ${payload.id}`);
+      const authClient = await auth.getClient();
+      const sheets = google.sheets({ version: "v4", auth: authClient });
+      const existingData = await sheets.spreadsheets.values.get({
+        spreadsheetId: process.env.GOOGLE_SHEET_ID,
+        range: "Orders!A:Z",
+      });
+      const existingRows = existingData.data.values || [];
+      const lastRowIndex = existingRows.length;
+      await sheets.spreadsheets.values.update({
+        spreadsheetId: process.env.GOOGLE_SHEET_ID,
+        range: `Orders!A${lastRowIndex + 1}`,
+        valueInputOption: "USER_ENTERED",
+        requestBody: {
+          values: sheetData,
+        },
+      });
+
+      // Apply orange background color for refunded orders
+      const formatRequests = [];
+      let currentRow = lastRowIndex + 1;
+
+      for (const row of sheetData) {
+        formatRequests.push({
+          repeatCell: {
+            range: {
+              sheetId: await getSheetId(sheets, "Orders"),
+              startRowIndex: currentRow - 1,
+              endRowIndex: currentRow,
+              startColumnIndex: 0,
+              endColumnIndex: 19, // All columns
+            },
+            cell: {
+              userEnteredFormat: {
+                backgroundColor: { red: 1.0, green: 0.6, blue: 0.2 }, // Orange
+                textFormat: { 
+                  foregroundColor: { red: 1, green: 1, blue: 1 } // White text for better contrast with orange background
+                }
+              },
+            },
+            fields: "userEnteredFormat(backgroundColor,textFormat)",
+          },
+        });
+        currentRow++;
+      }
+
+      // Apply formatting
+      await sheets.spreadsheets.batchUpdate({
+        spreadsheetId: process.env.GOOGLE_SHEET_ID,
+        requestBody: { requests: formatRequests },
+      });
+      console.log(`✅ Applied orange background colors to ${formatRequests.length} rows`);
+
+      console.log(`✅ Successfully appended ${sheetData.length} rows to Orders sheet`);
+    }
+
     console.log('✅ Refund processing completed:', {
       refundId: payload.id,
       orderId: payload.order_id,
       processedItems: results.length,
-      successfulItems: results.filter(r => r.success).length
+      successfulItems: results.filter(r => r.success).length,
+      sheetRowsAdded: sheetData.length
     });
 
     return {
@@ -2097,19 +2405,27 @@ export async function getVariantLengthBySKU(session, sku) {
 /**
  * Save or update product data in the database
  * @param {object} payload - Product webhook payload
+ * @param {object} options - Optional parameters for weight data
  * @returns {Promise<Object>} - Returns the saved/updated product object
  */
-export async function saveProductToDatabase(payload) {
+export async function saveProductToDatabase(payload, options = {}) {
   try {
     const variants = payload.variants || [];
     const processedVariants = [];
 
     for (const variant of variants) {
-      // For database storage, we'll use the weight data if available in the payload
-      // or set to 0 if not available (weight fetching will be done in the calling functions)
+      // Use weight data from options if provided (for product updates where we fetch weight separately)
+      // Otherwise use weight from payload if available
+      let weightInGram = 0;
+      if (options.variantWeights && options.variantWeights[variant.id]) {
+        weightInGram = options.variantWeights[variant.id];
+      } else if (variant.weight_in_gram) {
+        weightInGram = variant.weight_in_gram;
+      }
+
       processedVariants.push({
         title: variant.title || "",
-        weightInGram: variant.weight_in_gram || 0, // Use weight if available in payload
+        weightInGram: weightInGram,
         quantity: variant.inventory_quantity || 0,
         sku: variant.sku || ""
       });
@@ -2158,7 +2474,7 @@ export async function getProductFromDatabase(productId) {
 }
 
 /**
- * Process product update webhook - only append new subSKUs when inventory increases
+ * Process product update webhook - append new subSKUs when inventory increases and when weight is updated
  * @param {object} session - Shopify session client
  * @param {object} payload - Product update webhook payload
  */
@@ -2172,6 +2488,7 @@ export async function processProductUpdate(session, payload) {
     const variants = payload.variants || [];
     const results = [];
     const sheetData = [];
+    let variantWeights = {}; // Store weight data for database update
 
     // Get existing product data from database
     const existingProduct = await getProductFromDatabase(payload.id);
@@ -2277,25 +2594,34 @@ export async function processProductUpdate(session, payload) {
         console.error(`Error fetching variant weight for ${sku}:`, error);
       }
 
+      // Store weight data for database update
+      variantWeights[variant.id] = weightInGrams || 0;
+
       // Find existing variant data from the product database
       const existingVariant = existingProduct ? existingProduct.variants.find(v => v.sku === sku) : null;
       const newQuantity = variant.inventory_quantity || 0;
       const oldQuantity = existingVariant ? existingVariant.quantity : 0;
+      const oldWeight = existingVariant ? existingVariant.weightInGram : 0;
 
-      console.log('📊 Quantity comparison for SKU:', {
+      console.log('📊 Comparison for SKU:', {
         sku,
         oldQuantity,
         newQuantity,
-        difference: newQuantity - oldQuantity,
+        oldWeight,
+        newWeight: weightInGrams,
+        quantityDifference: newQuantity - oldQuantity,
+        weightDifference: weightInGrams - oldWeight,
         isNewProduct: !existingProduct
       });
 
-      // For new products, treat all quantity as new
-      // For existing products, only process if inventory increased
+      let shouldAddToSheet = false;
+      let reason = "";
+
+      // Check for inventory increase
       if (!existingProduct || newQuantity > oldQuantity) {
         const quantityIncrease = existingProduct ? (newQuantity - oldQuantity) : newQuantity;
         
-        console.log('➕ Processing inventory:', {
+        console.log('➕ Processing inventory increase:', {
           sku,
           increase: quantityIncrease,
           from: oldQuantity,
@@ -2339,11 +2665,62 @@ export async function processProductUpdate(session, payload) {
             "", // "Supplier Address"
           ]);
         });
-      } else {
-        console.log('ℹ️ No inventory increase for SKU:', {
+
+        shouldAddToSheet = true;
+        reason = "Inventory Update";
+      }
+
+      // Check for weight change (only if weight actually changed and we have existing data)
+      if (existingProduct && existingVariant && weightInGrams !== null && weightInGrams !== oldWeight) {
+        console.log('⚖️ Processing weight change:', {
+          sku,
+          oldWeight,
+          newWeight: weightInGrams,
+          difference: weightInGrams - oldWeight
+        });
+
+        // Get current available subSKUs for this SKU
+        const [skuData] = await getAvailableSKUs(sku);
+        if (skuData && skuData.availableSubSkus.length > 0) {
+          // Add each available subSKU to the sheet with weight update reason
+          skuData.availableSubSkus.forEach((subSku) => {
+            sheetData.push([
+              "", // Empty date cell since we have the date header
+              timeParisZone, // Time (Paris Time Zone)
+              payload.title, // Item Title
+              sku, // SKU
+              subSku.name, // Sub-SKU
+              variant.title || "", // Variant
+              weightInGrams || "", // Input Weight (in grams)
+              "Weight Update", // Input Reason
+              "", // Free Handwritten Note
+              payload.vendor, // "Supplier Name"
+              "", // "Supplier Address"
+            ]);
+          });
+
+          shouldAddToSheet = true;
+          reason = "Weight Update";
+
+          results.push({
+            sku,
+            success: true,
+            weightChange: {
+              oldWeight,
+              newWeight: weightInGrams,
+              subSKUsUpdated: skuData.availableSubSkus.length
+            }
+          });
+        }
+      }
+
+      if (!shouldAddToSheet) {
+        console.log('ℹ️ No changes detected for SKU:', {
           sku,
           oldQuantity,
-          newQuantity
+          newQuantity,
+          oldWeight,
+          newWeight: weightInGrams
         });
       }
     }
@@ -2365,8 +2742,8 @@ export async function processProductUpdate(session, payload) {
       console.log(`✅ Successfully updated Google Sheet with ${sheetData.length} new rows`);
     }
 
-    // Update product data in database
-    await saveProductToDatabase(payload);
+    // Update product data in database with weight information
+    await saveProductToDatabase(payload, { variantWeights });
 
     return {
       success: true,
@@ -2380,6 +2757,595 @@ export async function processProductUpdate(session, payload) {
     return {
       success: false,
       error: error.message,
+    };
+  }
+}
+
+/**
+ * Process order edit webhook
+ * @param {object} session - Shopify session client
+ * @param {object} payload - Order edit webhook payload
+ */
+export async function processOrderEdit(session, payload) {
+  try {
+    console.log('🔍 Starting order edit process:', {
+      orderEditId: payload.order_edit.id,
+      orderId: payload.order_edit.order_id,
+      additions: payload.order_edit.line_items.additions.length,
+      removals: payload.order_edit.line_items.removals.length
+    });
+
+    // Get the original order to understand the current state
+    const orderQuery = `
+      query getOrder($id: ID!) {
+        order(id: $id) {
+          id
+          name
+          email
+          phone
+          createdAt
+          updatedAt
+          totalPriceSet {
+            shopMoney {
+              amount
+              currencyCode
+            }
+          }
+          customer {
+            firstName
+            lastName
+            email
+            phone
+          }
+          shippingAddress {
+            firstName
+            lastName
+            address1
+            address2
+            city
+            province
+            country
+            zip
+          }
+          billingAddress {
+            firstName
+            lastName
+            address1
+            address2
+            city
+            province
+            country
+            zip
+          }
+          metafields(first: 10, namespace: "sku_tracking") {
+            edges {
+              node {
+                key
+                value
+              }
+            }
+          }
+          lineItems(first: 50) {
+            nodes {
+              id
+              sku
+              quantity
+              title
+              variantTitle
+              variant {
+                id
+                title
+                inventoryItem {
+                  id
+                  sku
+                }
+              }
+            }
+          }
+        }
+      }
+    `;
+
+    const orderData = await makeShopifyGraphQLRequest(
+      session,
+      orderQuery,
+      {
+        id: `gid://shopify/Order/${payload.order_edit.order_id}`,
+      }
+    );
+
+    const order = orderData.data.order;
+    if (!order) {
+      throw new Error(`Order ${payload.order_edit.order_id} not found`);
+    }
+
+    console.log('📥 Order data received:', {
+      orderName: order.name,
+      customerEmail: order.email,
+      lineItemsCount: order.lineItems.nodes.length,
+      hasMetafields: order.metafields.edges.length > 0
+    });
+
+    // Get the assigned subSKUs from metafields
+    const assignedSubSKUsMetafield = order.metafields.edges.find(
+      edge => edge.node.key === 'assigned_subskus'
+    );
+
+    let assignedSubSKUs = {};
+    if (assignedSubSKUsMetafield) {
+      assignedSubSKUs = JSON.parse(assignedSubSKUsMetafield.node.value);
+    }
+
+    const updatedAssignedSubSKUs = { ...assignedSubSKUs };
+    const sheetData = [];
+    const results = [];
+
+    // Process additions (new items added to the order)
+    for (const addition of payload.order_edit.line_items.additions) {
+      const lineItemId = addition.id;
+      const delta = addition.delta;
+
+      console.log('➕ Processing addition:', {
+        lineItemId,
+        delta
+      });
+
+      // Find the line item in the order
+      const lineItem = order.lineItems.nodes.find(
+        node => {
+          const nodeId = node.id.includes('gid://') 
+            ? node.id.split('/').pop() 
+            : node.id;
+          return nodeId === lineItemId.toString();
+        }
+      );
+
+      if (!lineItem) {
+        console.log('⚠️ Line item not found for addition:', lineItemId);
+        continue;
+      }
+
+      const sku = lineItem.sku;
+      if (!sku) {
+        console.log('⚠️ No SKU found for line item:', lineItemId);
+        continue;
+      }
+
+      // Check if we have enough available subSKUs
+      const [availableData] = await getAvailableSKUs(sku);
+      const availableQuantity = availableData?.availableQuantity || 0;
+
+      if (availableQuantity < delta) {
+        console.log('❌ Insufficient available subSKUs:', {
+          sku,
+          required: delta,
+          available: availableQuantity
+        });
+        results.push({
+          lineItemId,
+          sku,
+          success: false,
+          error: 'Insufficient available subSKUs',
+          type: 'addition'
+        });
+        continue;
+      }
+
+      // Get the next available subSKUs
+      const subSKUsToAssign = [];
+      for (let i = 0; i < delta; i++) {
+        const nextSubSKU = await getNextAvailableSubSKU(sku);
+        if (nextSubSKU) {
+          subSKUsToAssign.push(nextSubSKU);
+        }
+      }
+
+      if (subSKUsToAssign.length !== delta) {
+        console.log('❌ Could not get enough subSKUs:', {
+          sku,
+          required: delta,
+          got: subSKUsToAssign.length
+        });
+        results.push({
+          lineItemId,
+          sku,
+          success: false,
+          error: 'Could not get enough subSKUs',
+          type: 'addition'
+        });
+        continue;
+      }
+
+      // Mark subSKUs as unavailable
+      await updateSubSKUStatus(
+        sku,
+        subSKUsToAssign,
+        "unavailable"
+      );
+
+      // Update assigned subSKUs
+      const existingAssigned = assignedSubSKUs[lineItemId] || [];
+      updatedAssignedSubSKUs[lineItemId] = [...existingAssigned, ...subSKUsToAssign];
+
+      // Get variant weight
+      let weightInGrams = null;
+      try {
+        const variantResponse = await fetch(
+          `https://${session.shop}/admin/api/2025-01/variants/${lineItem.variant.id.split('/').pop()}.json?fields=weight_unit,weight`,
+          {
+            headers: {
+              'X-Shopify-Access-Token': session.accessToken,
+            },
+          }
+        );
+
+        const variantData = await variantResponse.json();
+        const variant = variantData.variant;
+
+        if (variant?.weight && variant?.weight_unit) {
+          switch (variant.weight_unit.toLowerCase()) {
+            case 'kg':
+              weightInGrams = variant.weight * 1000;
+              break;
+            case 'g':
+              weightInGrams = variant.weight;
+              break;
+            case 'lb':
+              weightInGrams = variant.weight * 453.592;
+              break;
+            case 'oz':
+              weightInGrams = variant.weight * 28.3495;
+              break;
+          }
+        }
+      } catch (error) {
+        console.error(`Error fetching variant weight for ${sku}:`, error);
+      }
+
+      // Add to sheet data for each subSKU
+      const currentDate = order.updatedAt ? new Date(order.updatedAt) : order.createdAt ? new Date(order.createdAt) : new Date();
+      const timeParisZone = currentDate.toLocaleTimeString('fr-FR', { timeZone: 'Europe/Paris' });
+
+      subSKUsToAssign.forEach((subSkuName) => {
+        sheetData.push([
+          "", // Date
+          timeParisZone, // Time (Paris Time Zone)
+          order.name, // Invoice Number
+          lineItem.title, // Item Title
+          sku, // SKU
+          subSkuName, // Sub-SKU
+          lineItem.variantTitle || "", // Variant
+          "", // Selected Size
+          weightInGrams || "", // Output Weight
+          "Order Edit - Addition", // Output Reason
+          "", // Free Handwritten Note
+          `${order.customer?.firstName || ""} ${order.customer?.lastName || ""}`.trim(), // Customer Name
+          order.customer?.email || "", // Email
+          order.customer?.phone || "", // Telephone
+          "", // Attachment pdf - jpg
+          "", // Supplier Name
+          "", // Supplier Address
+          "", // ID session staff
+          `Order Edit ID: ${payload.order_edit.id}`, // Note
+        ]);
+      });
+
+      results.push({
+        lineItemId,
+        sku,
+        success: true,
+        type: 'addition',
+        quantity: delta,
+        assignedSubSKUs: subSKUsToAssign
+      });
+    }
+
+    // Process removals (items removed from the order)
+    for (const removal of payload.order_edit.line_items.removals) {
+      const lineItemId = removal.id;
+      const delta = removal.delta;
+
+      console.log('➖ Processing removal:', {
+        lineItemId,
+        delta
+      });
+
+      // Find the line item in the order
+      const lineItem = order.lineItems.nodes.find(
+        node => {
+          const nodeId = node.id.includes('gid://') 
+            ? node.id.split('/').pop() 
+            : node.id;
+          return nodeId === lineItemId.toString();
+        }
+      );
+
+      if (!lineItem) {
+        console.log('⚠️ Line item not found for removal:', lineItemId);
+        continue;
+      }
+
+      const sku = lineItem.sku;
+      if (!sku) {
+        console.log('⚠️ No SKU found for line item:', lineItemId);
+        continue;
+      }
+
+      // Get the assigned subSKUs for this line item
+      const lineItemSubSKUs = assignedSubSKUs[lineItemId] || [];
+      
+      if (lineItemSubSKUs.length < delta) {
+        console.log('⚠️ Not enough assigned subSKUs for removal:', {
+          lineItemId,
+          required: delta,
+          assigned: lineItemSubSKUs.length
+        });
+        results.push({
+          lineItemId,
+          sku,
+          success: false,
+          error: 'Not enough assigned subSKUs',
+          type: 'removal'
+        });
+        continue;
+      }
+
+      // Get the subSKUs to mark as available (last N subSKUs)
+      const subSKUsToMarkAvailable = lineItemSubSKUs.slice(-delta);
+      
+      console.log('🔄 Preparing to mark subSKUs as available:', {
+        inventoryItemId: lineItem.variant.inventoryItem.id,
+        delta,
+        subSKUsToMarkAvailable,
+        remainingSubSKUs: lineItemSubSKUs.slice(0, -delta)
+      });
+
+      // Update the assigned subSKUs in our local copy
+      updatedAssignedSubSKUs[lineItemId] = lineItemSubSKUs.slice(0, -delta);
+
+      console.log('🔄 Marking subSKUs as available:', {
+        sku,
+        delta,
+        subSKUs: subSKUsToMarkAvailable
+      });
+
+      // Update the subSKUs status
+      await updateSubSKUStatus(
+        sku,
+        subSKUsToMarkAvailable,
+        "available"
+      );
+
+      // Get updated quantities
+      const [updatedSkuData] = await getAvailableSKUs(sku);
+      const ourNewQuantity = updatedSkuData.availableQuantity;
+
+      console.log('📊 Updated SKU data:', {
+        sku,
+        ourNewQuantity,
+        totalQuantity: updatedSkuData.totalQuantity,
+        availableSubSKUs: updatedSkuData.availableSubSkus
+      });
+
+      // Get Shopify quantity
+      const shopifyData = await makeShopifyGraphQLRequest(
+        session,
+        `
+        query getInventoryItemBySku($sku: String!) {
+          inventoryItems(first: 1, query: $sku) {
+            edges {
+              node {
+                id
+                sku
+                variant {
+                  sku
+                  inventoryQuantity
+                }
+              }
+            }
+          }
+        }
+      `,
+        { sku: `sku:${sku}` }
+      );
+
+      const shopifyQuantity = shopifyData.data.inventoryItems.edges
+        .filter(edge => edge.node.sku === sku)
+        .reduce((total, edge) => total + (edge.node.variant?.inventoryQuantity || 0), 0);
+
+      console.log('📊 Quantity comparison after marking available:', {
+        sku,
+        ourNewQuantity,
+        shopifyQuantity,
+        difference: ourNewQuantity - shopifyQuantity
+      });
+
+      // If our quantity is now greater than Shopify's, remove excess subSKUs
+      if (ourNewQuantity > shopifyQuantity) {
+        const toRemove = ourNewQuantity - shopifyQuantity;
+        console.log('➖ Removing excess subSKUs:', {
+          sku,
+          toRemove,
+          ourQuantity: ourNewQuantity,
+          shopifyQuantity
+        });
+        await removeSubSKUsByQuantity(sku, toRemove);
+      }
+
+      // Add to sheet data for each subSKU being returned
+      const currentDate = order.updatedAt ? new Date(order.updatedAt) : order.createdAt ? new Date(order.createdAt) : new Date();
+      const timeParisZone = currentDate.toLocaleTimeString('fr-FR', { timeZone: 'Europe/Paris' });
+
+      subSKUsToMarkAvailable.forEach((subSkuName) => {
+        sheetData.push([
+          "", // Date
+          timeParisZone, // Time (Paris Time Zone)
+          order.name, // Invoice Number
+          lineItem.title, // Item Title
+          sku, // SKU
+          subSkuName, // Sub-SKU
+          lineItem.variantTitle || "", // Variant
+          "", // Selected Size
+          "", // Output Weight
+          "Order Edit - Removal", // Output Reason
+          "", // Free Handwritten Note
+          `${order.customer?.firstName || ""} ${order.customer?.lastName || ""}`.trim(), // Customer Name
+          order.customer?.email || "", // Email
+          order.customer?.phone || "", // Telephone
+          "", // Attachment pdf - jpg
+          "", // Supplier Name
+          "", // Supplier Address
+          "", // ID session staff
+          `Order Edit ID: ${payload.order_edit.id}`, // Note
+        ]);
+      });
+
+      results.push({
+        sku,
+        lineItemId,
+        inventoryItemId: lineItem.variant.inventoryItem.id,
+        success: true,
+        type: 'removal',
+        quantity: delta,
+        markedAvailable: subSKUsToMarkAvailable,
+        removedExcess: ourNewQuantity > shopifyQuantity ? ourNewQuantity - shopifyQuantity : 0
+      });
+    }
+
+    // Update the metafields with the updated assigned subSKUs
+    if (Object.keys(updatedAssignedSubSKUs).length > 0) {
+      const mutation = `
+        mutation createOrderMetafields($metafields: [MetafieldsSetInput!]!) {
+          metafieldsSet(metafields: $metafields) {
+            metafields {
+              id
+              key
+              value
+            }
+            userErrors {
+              field
+              message
+            }
+          }
+        }
+      `;
+
+      const metafieldInput = {
+        metafields: [
+          {
+            ownerId: `gid://shopify/Order/${payload.order_edit.order_id}`,
+            namespace: "sku_tracking",
+            key: "assigned_subskus",
+            type: "json",
+            value: JSON.stringify(updatedAssignedSubSKUs)
+          }
+        ]
+      };
+
+      await makeShopifyGraphQLRequest(session, mutation, metafieldInput);
+    }
+
+    // Append data to Google Sheet
+    if (sheetData.length > 0) {
+      console.log(`📊 Appending ${sheetData.length} rows to Orders sheet for order edit ${payload.order_edit.id}`);
+      
+      const authClient = await auth.getClient();
+      const sheets = google.sheets({ version: "v4", auth: authClient });
+
+      // Get the last row index
+      const existingData = await sheets.spreadsheets.values.get({
+        spreadsheetId: process.env.GOOGLE_SHEET_ID,
+        range: "Orders!A:Z",
+      });
+      const existingRows = existingData.data.values || [];
+      const lastRowIndex = existingRows.length;
+
+      // Append the new data
+      await sheets.spreadsheets.values.update({
+        spreadsheetId: process.env.GOOGLE_SHEET_ID,
+        range: `Orders!A${lastRowIndex + 1}`,
+        valueInputOption: "USER_ENTERED",
+        requestBody: {
+          values: sheetData,
+        },
+      });
+
+      // Apply background colors based on operation type
+      const formatRequests = [];
+      let currentRow = lastRowIndex + 1;
+
+      for (const row of sheetData) {
+        const reason = row[9]; // Output Reason column
+        let backgroundColor = null;
+
+        if (reason === "Order Edit - Addition") {
+          backgroundColor = { red: 0.8, green: 1.0, blue: 0.8 }; // Light green
+        } else if (reason === "Order Edit - Removal") {
+          backgroundColor = { red: 1.0, green: 0.8, blue: 0.8 }; // Light red
+        }
+
+        if (backgroundColor) {
+          formatRequests.push({
+            repeatCell: {
+              range: {
+                sheetId: await getSheetId(sheets, "Orders"),
+                startRowIndex: currentRow - 1,
+                endRowIndex: currentRow,
+                startColumnIndex: 0,
+                endColumnIndex: 19, // All columns
+              },
+              cell: {
+                userEnteredFormat: {
+                  backgroundColor: backgroundColor,
+                },
+              },
+              fields: "userEnteredFormat(backgroundColor)",
+            },
+          });
+        }
+        currentRow++;
+      }
+
+      // Apply formatting if there are any format requests
+      if (formatRequests.length > 0) {
+        await sheets.spreadsheets.batchUpdate({
+          spreadsheetId: process.env.GOOGLE_SHEET_ID,
+          requestBody: { requests: formatRequests },
+        });
+        console.log(`✅ Applied background colors to ${formatRequests.length} rows`);
+      }
+
+      console.log(`✅ Successfully appended ${sheetData.length} rows to Orders sheet`);
+    }
+
+    console.log('✅ Order edit completed:', {
+      orderEditId: payload.order_edit.id,
+      orderId: payload.order_edit.order_id,
+      processedItems: results.length,
+      successfulItems: results.filter(r => r.success).length,
+      failedItems: results.filter(r => !r.success).length,
+      sheetRowsAdded: sheetData.length
+    });
+
+    return {
+      success: true,
+      data: {
+        orderEditId: payload.order_edit.id,
+        orderId: payload.order_edit.order_id,
+        results,
+        sheetRowsAdded: sheetData.length
+      }
+    };
+  } catch (error) {
+    console.error('❌ Error processing order edit:', {
+      error: error.message,
+      stack: error.stack,
+      orderEditId: payload.order_edit?.id,
+      orderId: payload.order_edit?.order_id
+    });
+    return {
+      success: false,
+      error: error.message
     };
   }
 }
