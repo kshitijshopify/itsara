@@ -371,7 +371,7 @@ export async function insertOrdersGroupedByDate(sheetTitle, orders) {
           ...request.repeatCell,
           range: {
             ...request.repeatCell.range,
-            startRowIndex: request.repeatCell.range.startRowIndex + 2, // +1 for header row
+            startRowIndex: request.repeatCell.range.startRowIndex + 2, // +2 for header and date row
             endRowIndex: request.repeatCell.range.endRowIndex + 2
           }
         }

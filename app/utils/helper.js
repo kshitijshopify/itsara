@@ -902,7 +902,7 @@ export async function processProductCreate(session, payload) {
             ...request.repeatCell,
             range: {
               ...request.repeatCell.range,
-              startRowIndex: request.repeatCell.range.startRowIndex + 2, // +1 for header row
+              startRowIndex: request.repeatCell.range.startRowIndex + 2, // +2 for header and date row
               endRowIndex: request.repeatCell.range.endRowIndex + 2
             }
           }
@@ -1772,7 +1772,7 @@ export async function processOrderCancellation(session, payload, type = "cancell
 
       // Apply dark red background color for cancelled orders
       const formatRequests = [];
-      let currentRow = 2; // Start from row 2 (after header)
+      let currentRow = 3; // Start from row 3 (after header and date row)
 
       for (const row of sheetData) {
         formatRequests.push({
@@ -2283,7 +2283,7 @@ export async function processRefund(session, payload) {
 
       // Apply orange background color for refunded orders
       const formatRequests = [];
-      let currentRow = 2; // Start from row 2 (after header)
+      let currentRow = 3; // Start from row 3 (after header and date row)
 
       for (const row of sheetData) {
         formatRequests.push({
@@ -3314,7 +3314,7 @@ export async function processOrderEdit(session, payload) {
 
       // Apply background colors based on operation type
       const formatRequests = [];
-      let currentRow = 3; // Start from row 2 (after header)
+      let currentRow = 3; // Start from row 3 (after header and date row)
 
       for (const row of sheetData) {
         const reason = row[9]; // Output Reason column
