@@ -371,8 +371,8 @@ export async function insertOrdersGroupedByDate(sheetTitle, orders) {
           ...request.repeatCell,
           range: {
             ...request.repeatCell.range,
-            startRowIndex: request.repeatCell.range.startRowIndex + 1, // +1 for header row
-            endRowIndex: request.repeatCell.range.endRowIndex + 1
+            startRowIndex: request.repeatCell.range.startRowIndex + 2, // +1 for header row
+            endRowIndex: request.repeatCell.range.endRowIndex + 2
           }
         }
       }));
