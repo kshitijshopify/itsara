@@ -270,20 +270,6 @@ export async function insertOrdersGroupedByDate(sheetTitle, orders) {
   const formatRequests = [];
   const sheetId = await getSheetId(sheets, sheetTitle);
 
-  // Get all existing data
-  const existingData = await sheets.spreadsheets.values.get({
-    spreadsheetId: SHEET_ID,
-    range: `${sheetTitle}!A:Z`,
-  });
-
-  const existingRows = existingData.data.values || [];
-  const headerRow = existingRows[0] || [];
-  const dataRows = existingRows.slice(1);
-
-  // Get the last row index
-  const lastRowIndex = dataRows.length + 1; // +1 for header row
-  let currentRowIndex = lastRowIndex;
-
   // Get existing dates from the sheet
   const existingDates = await getExistingDatesFromSheet(sheets, sheetTitle);
 
@@ -297,8 +283,8 @@ export async function insertOrdersGroupedByDate(sheetTitle, orders) {
         repeatCell: {
           range: {
             sheetId,
-            startRowIndex: currentRowIndex,
-            endRowIndex: currentRowIndex + 1,
+            startRowIndex: allRows.length - 1, // Will be adjusted after prepending
+            endRowIndex: allRows.length,
           },
           cell: {
             userEnteredFormat: {
@@ -309,7 +295,6 @@ export async function insertOrdersGroupedByDate(sheetTitle, orders) {
           fields: "userEnteredFormat(backgroundColor,textFormat)",
         },
       });
-      currentRowIndex++;
     }
 
     // Track processed order IDs to avoid duplicates
@@ -345,7 +330,6 @@ export async function insertOrdersGroupedByDate(sheetTitle, orders) {
             processedSubSKUs.add(subSKU);
             const timeParisZone = new Date(order.created_at).toLocaleTimeString('fr-FR', { timeZone: 'Europe/Paris' });
             
-            
             allRows.push([
               "", // Date
               timeParisZone, // Time(Paris Time Zone)
@@ -367,39 +351,40 @@ export async function insertOrdersGroupedByDate(sheetTitle, orders) {
               "", // ID session staff
               "", // Note
             ]);
-            currentRowIndex++;
           }
         }
       }
     }
-
-    // Add empty row after each date group
-    // allRows.push([]);
-    currentRowIndex++;
   }
 
-  // Append new data if there are rows to add
+  // Prepend new data if there are rows to add
   if (allRows.length > 0) {
-    // Write all data starting from the last row
-    await sheets.spreadsheets.values.update({
-      spreadsheetId: SHEET_ID,
-      range: `${sheetTitle}!A${lastRowIndex + 1}`,
-      valueInputOption: "USER_ENTERED",
-      requestBody: {
-        values: allRows,
-      },
-    });
+    // Use the new prepend function
+    await prependDataToSheet(sheetTitle, allRows, 2);
 
-    // Apply formatting
+    // Apply formatting after prepending (adjust row indices)
     if (formatRequests.length > 0) {
+      // Update format requests to account for prepended rows
+      const updatedFormatRequests = formatRequests.map(request => ({
+        ...request,
+        repeatCell: {
+          ...request.repeatCell,
+          range: {
+            ...request.repeatCell.range,
+            startRowIndex: request.repeatCell.range.startRowIndex + 1, // +1 for header row
+            endRowIndex: request.repeatCell.range.endRowIndex + 1
+          }
+        }
+      }));
+
       await sheets.spreadsheets.batchUpdate({
         spreadsheetId: SHEET_ID,
-        requestBody: { requests: formatRequests },
+        requestBody: { requests: updatedFormatRequests },
       });
     }
   }
 
-  console.log(`✅ Orders appended to "${sheetTitle}" with proper date-based sorting`);
+  console.log(`✅ Orders prepended to "${sheetTitle}" with proper date-based sorting`);
 }
 
 export function groupByDate(orders) {
@@ -488,4 +473,46 @@ export function getPropertyValue(properties, key) {
 
   const prop = properties.find(p => p.name === key);
   return prop ? prop.value : null;
+}
+
+export async function prependDataToSheet(sheetTitle, newData, startRowIndex = 2) {
+  const authClient = await auth.getClient();
+  const sheets = google.sheets({ version: "v4", auth: authClient });
+
+  if (newData.length === 0) {
+    console.log(`ℹ️ No data to prepend to "${sheetTitle}"`);
+    return;
+  }
+
+  console.log(`📝 Prepending ${newData.length} rows to "${sheetTitle}" starting at row ${startRowIndex}`);
+
+  // Step 1: Insert the required number of rows at the top (after header)
+  const insertRequests = [{
+    insertDimension: {
+      range: {
+        sheetId: await getSheetId(sheets, sheetTitle),
+        dimension: "ROWS",
+        startIndex: startRowIndex - 1, // 0-based index, so subtract 1
+        endIndex: startRowIndex - 1 + newData.length
+      },
+      inheritFromBefore: false
+    }
+  }];
+
+  await sheets.spreadsheets.batchUpdate({
+    spreadsheetId: SHEET_ID,
+    requestBody: { requests: insertRequests }
+  });
+
+  // Step 2: Write the new data into the inserted rows
+  await sheets.spreadsheets.values.update({
+    spreadsheetId: SHEET_ID,
+    range: `${sheetTitle}!A${startRowIndex}`,
+    valueInputOption: "USER_ENTERED",
+    requestBody: {
+      values: newData,
+    },
+  });
+
+  console.log(`✅ Successfully prepended ${newData.length} rows to "${sheetTitle}"`);
 }

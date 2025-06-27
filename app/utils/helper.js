@@ -11,7 +11,8 @@ import {
   updateSubSkuWithOrderInfo,
   ensureSheetTabExists,
   groupByDate,
-  auth
+  auth,
+  prependDataToSheet
 } from "./googleSheet.server";
 import { makeShopifyGraphQLRequest } from "../utils/shopify.server";
 import { google } from "googleapis";
@@ -760,10 +761,14 @@ export async function processProductCreate(session, payload) {
     // Get existing dates from the sheet
     const existingDates = await getExistingDatesFromSheet(sheets, "Inventory Updates");
 
-    // Format the date from the payload
-    const productDate = new Date(payload.updated_at || payload.created_at);
-    const formattedDate = productDate.toISOString().split("T")[0];
-    const timeParisZone = productDate.toLocaleTimeString('fr-FR', { timeZone: 'Europe/Paris' });
+      // Use current date for date header check (not product date)
+      const currentDate = new Date();
+      // Use product date for time display in rows
+      const productDate = new Date(payload.updated_at || payload.created_at);
+      const formattedDate = currentDate.toISOString().split("T")[0];
+      const timeParisZone = productDate.toLocaleTimeString('fr-FR', { timeZone: 'Europe/Paris' });
+    
+
 
     // Get the last row index
     const existingData = await sheets.spreadsheets.values.get({
@@ -885,25 +890,31 @@ export async function processProductCreate(session, payload) {
     if (sheetData.length > 0) {
       console.log(`Adding ${sheetData.length} rows to Google Sheet for product ${payload.title}`);
       
-      // Write the data
-      await sheets.spreadsheets.values.update({
-        spreadsheetId: process.env.GOOGLE_SHEET_ID,
-        range: `Inventory Updates!A${lastRowIndex + 1}`,
-        valueInputOption: "USER_ENTERED",
-        requestBody: {
-          values: sheetData,
-        },
-      });
+      // Use the new prepend function
+      await prependDataToSheet("Inventory Updates", sheetData, 2);
 
       // Apply formatting if we have any format requests
       if (formatRequests.length > 0) {
+        // Update format requests to account for prepended rows
+        const updatedFormatRequests = formatRequests.map(request => ({
+          ...request,
+          repeatCell: {
+            ...request.repeatCell,
+            range: {
+              ...request.repeatCell.range,
+              startRowIndex: request.repeatCell.range.startRowIndex + 1, // +1 for header row
+              endRowIndex: request.repeatCell.range.endRowIndex + 1
+            }
+          }
+        }));
+
         await sheets.spreadsheets.batchUpdate({
           spreadsheetId: process.env.GOOGLE_SHEET_ID,
-          requestBody: { requests: formatRequests },
+          requestBody: { requests: updatedFormatRequests },
         });
       }
 
-      console.log(`✅ Successfully updated Google Sheet with ${sheetData.length} rows`);
+      console.log(`✅ Successfully prepended ${sheetData.length} rows to Google Sheet`);
     }
 
     // Save product data to database
@@ -1749,29 +1760,19 @@ export async function processOrderCancellation(session, payload, type = "cancell
 
     await makeShopifyGraphQLRequest(session, mutation, metafieldInput);
 
-    // Append data to Google Sheet
+    // Prepend data to Google Sheet
     if (sheetData.length > 0) {
-      console.log(`📊 Appending ${sheetData.length} rows to Orders sheet for order cancelled ${payload.id}`);
+      console.log(`📊 Prepending ${sheetData.length} rows to Orders sheet for order cancelled ${payload.id}`);
+      
       const authClient = await auth.getClient();
       const sheets = google.sheets({ version: "v4", auth: authClient });
-      const existingData = await sheets.spreadsheets.values.get({
-        spreadsheetId: process.env.GOOGLE_SHEET_ID,
-        range: "Orders!A:Z",
-      });
-      const existingRows = existingData.data.values || [];
-      const lastRowIndex = existingRows.length;
-      await sheets.spreadsheets.values.update({
-        spreadsheetId: process.env.GOOGLE_SHEET_ID,
-        range: `Orders!A${lastRowIndex + 1}`,
-        valueInputOption: "USER_ENTERED",
-        requestBody: {
-          values: sheetData,
-        },
-      });
+      
+      // Use the new prepend function
+      await prependDataToSheet("Orders", sheetData, 2);
 
       // Apply dark red background color for cancelled orders
       const formatRequests = [];
-      let currentRow = lastRowIndex + 1;
+      let currentRow = 2; // Start from row 2 (after header)
 
       for (const row of sheetData) {
         formatRequests.push({
@@ -1804,7 +1805,7 @@ export async function processOrderCancellation(session, payload, type = "cancell
       });
       console.log(`✅ Applied dark red background colors to ${formatRequests.length} rows`);
 
-      console.log(`✅ Successfully appended ${sheetData.length} rows to Orders sheet`);
+      console.log(`✅ Successfully prepended ${sheetData.length} rows to Orders sheet`);
     }
 
     console.log('✅ Order cancellation completed:', {
@@ -2270,29 +2271,19 @@ export async function processRefund(session, payload) {
       });
     }
 
-    // Append data to Google Sheet
+    // Prepend data to Google Sheet
     if (sheetData.length > 0) {
-      console.log(`📊 Appending ${sheetData.length} rows to Orders sheet for refund ${payload.id}`);
+      console.log(`📊 Prepending ${sheetData.length} rows to Orders sheet for refund ${payload.id}`);
+      
       const authClient = await auth.getClient();
       const sheets = google.sheets({ version: "v4", auth: authClient });
-      const existingData = await sheets.spreadsheets.values.get({
-        spreadsheetId: process.env.GOOGLE_SHEET_ID,
-        range: "Orders!A:Z",
-      });
-      const existingRows = existingData.data.values || [];
-      const lastRowIndex = existingRows.length;
-      await sheets.spreadsheets.values.update({
-        spreadsheetId: process.env.GOOGLE_SHEET_ID,
-        range: `Orders!A${lastRowIndex + 1}`,
-        valueInputOption: "USER_ENTERED",
-        requestBody: {
-          values: sheetData,
-        },
-      });
+      
+      // Use the new prepend function
+      await prependDataToSheet("Orders", sheetData, 2);
 
       // Apply orange background color for refunded orders
       const formatRequests = [];
-      let currentRow = lastRowIndex + 1;
+      let currentRow = 2; // Start from row 2 (after header)
 
       for (const row of sheetData) {
         formatRequests.push({
@@ -2325,7 +2316,7 @@ export async function processRefund(session, payload) {
       });
       console.log(`✅ Applied orange background colors to ${formatRequests.length} rows`);
 
-      console.log(`✅ Successfully appended ${sheetData.length} rows to Orders sheet`);
+      console.log(`✅ Successfully prepended ${sheetData.length} rows to Orders sheet`);
     }
 
     console.log('✅ Refund processing completed:', {
@@ -2729,17 +2720,10 @@ export async function processProductUpdate(session, payload) {
     if (sheetData.length > 0) {
       console.log(`Adding ${sheetData.length} new rows to Google Sheet for product update ${payload.title}`);
       
-      // Write the data
-      await sheets.spreadsheets.values.update({
-        spreadsheetId: process.env.GOOGLE_SHEET_ID,
-        range: `Inventory Updates!A${lastRowIndex + 1}`,
-        valueInputOption: "USER_ENTERED",
-        requestBody: {
-          values: sheetData,
-        },
-      });
+      // Use the new prepend function
+      await prependDataToSheet("Inventory Updates", sheetData, 2);
 
-      console.log(`✅ Successfully updated Google Sheet with ${sheetData.length} new rows`);
+      console.log(`✅ Successfully prepended ${sheetData.length} new rows to Google Sheet`);
     }
 
     // Update product data in database with weight information
@@ -3316,6 +3300,64 @@ export async function processOrderEdit(session, payload) {
       }
 
       console.log(`✅ Successfully appended ${sheetData.length} rows to Orders sheet`);
+    }
+
+    // Prepend data to Google Sheet
+    if (sheetData.length > 0) {
+      console.log(`📊 Prepending ${sheetData.length} rows to Orders sheet for order edit ${payload.order_edit.id}`);
+      
+      const authClient = await auth.getClient();
+      const sheets = google.sheets({ version: "v4", auth: authClient });
+
+      // Use the new prepend function
+      await prependDataToSheet("Orders", sheetData, 2);
+
+      // Apply background colors based on operation type
+      const formatRequests = [];
+      let currentRow = 2; // Start from row 2 (after header)
+
+      for (const row of sheetData) {
+        const reason = row[9]; // Output Reason column
+        let backgroundColor = null;
+
+        if (reason === "Order Edit - Addition") {
+          backgroundColor = { red: 0.8, green: 1.0, blue: 0.8 }; // Light green
+        } else if (reason === "Order Edit - Removal") {
+          backgroundColor = { red: 1.0, green: 0.8, blue: 0.8 }; // Light red
+        }
+
+        if (backgroundColor) {
+          formatRequests.push({
+            repeatCell: {
+              range: {
+                sheetId: await getSheetId(sheets, "Orders"),
+                startRowIndex: currentRow - 1,
+                endRowIndex: currentRow,
+                startColumnIndex: 0,
+                endColumnIndex: 19, // All columns
+              },
+              cell: {
+                userEnteredFormat: {
+                  backgroundColor: backgroundColor,
+                },
+              },
+              fields: "userEnteredFormat(backgroundColor)",
+            },
+          });
+        }
+        currentRow++;
+      }
+
+      // Apply formatting if there are any format requests
+      if (formatRequests.length > 0) {
+        await sheets.spreadsheets.batchUpdate({
+          spreadsheetId: process.env.GOOGLE_SHEET_ID,
+          requestBody: { requests: formatRequests },
+        });
+        console.log(`✅ Applied background colors to ${formatRequests.length} rows`);
+      }
+
+      console.log(`✅ Successfully prepended ${sheetData.length} rows to Orders sheet`);
     }
 
     console.log('✅ Order edit completed:', {
