@@ -891,7 +891,7 @@ export async function processProductCreate(session, payload) {
       console.log(`Adding ${sheetData.length} rows to Google Sheet for product ${payload.title}`);
       
       // Use the new prepend function
-      await prependDataToSheet("Inventory Updates", sheetData, 2);
+      await prependDataToSheet("Inventory Updates", sheetData, 3);
 
       // Apply formatting if we have any format requests
       if (formatRequests.length > 0) {
@@ -1768,7 +1768,7 @@ export async function processOrderCancellation(session, payload, type = "cancell
       const sheets = google.sheets({ version: "v4", auth: authClient });
       
       // Use the new prepend function
-      await prependDataToSheet("Orders", sheetData, 2);
+      await prependDataToSheet("Orders", sheetData, 3);
 
       // Apply dark red background color for cancelled orders
       const formatRequests = [];
@@ -2279,7 +2279,7 @@ export async function processRefund(session, payload) {
       const sheets = google.sheets({ version: "v4", auth: authClient });
       
       // Use the new prepend function
-      await prependDataToSheet("Orders", sheetData, 2);
+      await prependDataToSheet("Orders", sheetData, 3);
 
       // Apply orange background color for refunded orders
       const formatRequests = [];
@@ -2721,7 +2721,7 @@ export async function processProductUpdate(session, payload) {
       console.log(`Adding ${sheetData.length} new rows to Google Sheet for product update ${payload.title}`);
       
       // Use the new prepend function
-      await prependDataToSheet("Inventory Updates", sheetData, 2);
+      await prependDataToSheet("Inventory Updates", sheetData, 3);
 
       console.log(`✅ Successfully prepended ${sheetData.length} new rows to Google Sheet`);
     }
@@ -3310,7 +3310,7 @@ export async function processOrderEdit(session, payload) {
       const sheets = google.sheets({ version: "v4", auth: authClient });
 
       // Use the new prepend function
-      await prependDataToSheet("Orders", sheetData, 2);
+      await prependDataToSheet("Orders", sheetData, 3);
 
       // Apply background colors based on operation type
       const formatRequests = [];

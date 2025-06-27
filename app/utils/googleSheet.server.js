@@ -360,7 +360,7 @@ export async function insertOrdersGroupedByDate(sheetTitle, orders) {
   // Prepend new data if there are rows to add
   if (allRows.length > 0) {
     // Use the new prepend function
-    await prependDataToSheet(sheetTitle, allRows, 2);
+    await prependDataToSheet(sheetTitle, allRows, 3);
 
     // Apply formatting after prepending (adjust row indices)
     if (formatRequests.length > 0) {
@@ -475,7 +475,7 @@ export function getPropertyValue(properties, key) {
   return prop ? prop.value : null;
 }
 
-export async function prependDataToSheet(sheetTitle, newData, startRowIndex = 2) {
+export async function prependDataToSheet(sheetTitle, newData, startRowIndex = 3) {
   const authClient = await auth.getClient();
   const sheets = google.sheets({ version: "v4", auth: authClient });
 
