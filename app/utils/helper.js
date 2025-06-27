@@ -1792,7 +1792,7 @@ export async function processOrderCancellation(session, payload, type = "cancell
                 }
               },
             },
-            fields: "userEnteredFormat(backgroundColor)",
+            fields: "userEnteredFormat(backgroundColor,textFormat)",
           },
         });
         currentRow++;
@@ -3281,9 +3281,12 @@ export async function processOrderEdit(session, payload) {
               cell: {
                 userEnteredFormat: {
                   backgroundColor: backgroundColor,
+                  textFormat: { 
+                    foregroundColor: { red: 0, green: 0, blue: 0 } // Black text for light backgrounds
+                  }
                 },
               },
-              fields: "userEnteredFormat(backgroundColor)",
+              fields: "userEnteredFormat(backgroundColor,textFormat)",
             },
           });
         }
@@ -3339,9 +3342,12 @@ export async function processOrderEdit(session, payload) {
               cell: {
                 userEnteredFormat: {
                   backgroundColor: backgroundColor,
+                  textFormat: { 
+                    foregroundColor: { red: 0, green: 0, blue: 0 } // Black text for light backgrounds
+                  }
                 },
               },
-              fields: "userEnteredFormat(backgroundColor)",
+              fields: "userEnteredFormat(backgroundColor,textFormat)",
             },
           });
         }
