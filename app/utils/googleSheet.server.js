@@ -504,7 +504,36 @@ export async function prependDataToSheet(sheetTitle, newData, startRowIndex = 3)
     requestBody: { requests: insertRequests }
   });
 
-  // Step 2: Write the new data into the inserted rows
+  // Step 2: Clear any inherited formatting from the inserted rows
+  const clearFormatRequests = [{
+    repeatCell: {
+      range: {
+        sheetId: await getSheetId(sheets, sheetTitle),
+        startRowIndex: startRowIndex - 1,
+        endRowIndex: startRowIndex - 1 + newData.length,
+        startColumnIndex: 0,
+        endColumnIndex: 20 // Clear all columns
+      },
+      cell: {
+        userEnteredFormat: {
+          backgroundColor: { red: 1, green: 1, blue: 1 }, // White background
+          textFormat: {
+            foregroundColor: { red: 0, green: 0, blue: 0 }, // Black text
+            bold: false,
+            italic: false
+          }
+        }
+      },
+      fields: "userEnteredFormat(backgroundColor,textFormat)"
+    }
+  }];
+
+  await sheets.spreadsheets.batchUpdate({
+    spreadsheetId: SHEET_ID,
+    requestBody: { requests: clearFormatRequests }
+  });
+
+  // Step 3: Write the new data into the inserted rows
   await sheets.spreadsheets.values.update({
     spreadsheetId: SHEET_ID,
     range: `${sheetTitle}!A${startRowIndex}`,
@@ -514,5 +543,5 @@ export async function prependDataToSheet(sheetTitle, newData, startRowIndex = 3)
     },
   });
 
-  console.log(`✅ Successfully prepended ${newData.length} rows to "${sheetTitle}"`);
+  console.log(`✅ Successfully prepended ${newData.length} rows to "${sheetTitle}" with cleared formatting`);
 }
