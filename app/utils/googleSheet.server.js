@@ -233,24 +233,7 @@ export async function ensureSheetTabExists(sheetTitle) {
   }
 }
 
-export async function getExistingDatesFromSheet(sheets, sheetTitle) {
-  const response = await sheets.spreadsheets.values.get({
-    spreadsheetId: SHEET_ID,
-    range: `${sheetTitle}!A:A`,
-  });
 
-  const values = response.data.values || [];
-  const existingDates = new Set();
-
-  for (const row of values) {
-    const cellValue = row[0];
-    if (/^\d{4}-\d{2}-\d{2}$/.test(cellValue)) {
-      existingDates.add(cellValue);
-    }
-  }
-
-  return existingDates;
-}
 
 export async function insertOrdersGroupedByDate(sheetTitle, orders) {
   const authClient = await auth.getClient();
@@ -267,35 +250,9 @@ export async function insertOrdersGroupedByDate(sheetTitle, orders) {
   await addSheetOrderHeader(sheets, sheetTitle);
 
   const allRows = [];
-  const formatRequests = [];
-  const sheetId = await getSheetId(sheets, sheetTitle);
-
-  // Get existing dates from the sheet
-  const existingDates = await getExistingDatesFromSheet(sheets, sheetTitle);
 
   // Process each date group
   for (const [date, ordersForDate] of Object.entries(grouped)) {
-    // If date already exists, skip adding the date header
-    if (!existingDates.has(date)) {
-      // Add date header only if date doesn't exist
-      allRows.push([date]);
-      formatRequests.push({
-        repeatCell: {
-          range: {
-            sheetId,
-            startRowIndex: allRows.length - 1, // Will be adjusted after prepending
-            endRowIndex: allRows.length,
-          },
-          cell: {
-            userEnteredFormat: {
-              backgroundColor: { red: 0.9, green: 0.9, blue: 0.6 },
-              textFormat: { bold: true },
-            },
-          },
-          fields: "userEnteredFormat(backgroundColor,textFormat)",
-        },
-      });
-    }
 
     // Track processed order IDs to avoid duplicates
     const processedOrderIds = new Set();
@@ -361,27 +318,6 @@ export async function insertOrdersGroupedByDate(sheetTitle, orders) {
   if (allRows.length > 0) {
     // Use the new prepend function
     await prependDataToSheet(sheetTitle, allRows, 3);
-
-    // Apply formatting after prepending (adjust row indices)
-    if (formatRequests.length > 0) {
-      // Update format requests to account for prepended rows
-      const updatedFormatRequests = formatRequests.map(request => ({
-        ...request,
-        repeatCell: {
-          ...request.repeatCell,
-          range: {
-            ...request.repeatCell.range,
-            startRowIndex: request.repeatCell.range.startRowIndex + 2, // +2 for header and date row
-            endRowIndex: request.repeatCell.range.endRowIndex + 2
-          }
-        }
-      }));
-
-      await sheets.spreadsheets.batchUpdate({
-        spreadsheetId: SHEET_ID,
-        requestBody: { requests: updatedFormatRequests },
-      });
-    }
   }
 
   console.log(`✅ Orders prepended to "${sheetTitle}" with proper date-based sorting`);

@@ -4,7 +4,6 @@ import {
   processWebhookPayload,
   ensureSheetHasHeader,
   upsertRowsToGoogleSheet,
-  getExistingDatesFromSheet,
   getSheetId,
   getSheet,
   addSheetOrderHeader,
@@ -681,19 +680,20 @@ export async function processInventoryLevelUpdate(session, payload) {
         },
       };
     } else if (ourQuantity > shopifyQuantity) {
-      // Need to remove subSKUs
+      // Need to remove subSKUs - only remove available subSKUs
       const toRemove = ourQuantity - shopifyQuantity;
       
-      console.log('➖ Removing subSKUs:', {
+      console.log('➖ Removing available subSKUs:', {
         sku,
         toRemove,
         currentQuantity: ourQuantity,
         targetQuantity: shopifyQuantity
       });
 
+      // removeSubSKUsByQuantity already only removes available subSKUs
       await removeSubSKUsByQuantity(sku, toRemove);
 
-      console.log('✅ Removed subSKUs:', {
+      console.log('✅ Removed available subSKUs:', {
         sku,
         removed: toRemove
       });
@@ -748,61 +748,13 @@ export async function processProductCreate(session, payload) {
     const variants = payload.variants || [];
     const results = [];
     const sheetData = [];
-    const formatRequests = [];
 
     // First ensure sheet has proper headers
     await ensureSheetHasHeader();
 
-    // Get the sheet ID for formatting
-    const authClient = await auth.getClient();
-    const sheets = google.sheets({ version: "v4", auth: authClient });
-    const sheetId = await getSheetId(sheets, "Inventory Updates");
-
-    // Get existing dates from the sheet
-    const existingDates = await getExistingDatesFromSheet(sheets, "Inventory Updates");
-
-      // Use current date for date header check (not product date)
-      const currentDate = new Date();
-      // Use product date for time display in rows
-      const productDate = new Date(payload.updated_at || payload.created_at);
-      const formattedDate = currentDate.toISOString().split("T")[0];
-      const timeParisZone = productDate.toLocaleTimeString('fr-FR', { timeZone: 'Europe/Paris' });
-    
-
-
-    // Get the last row index
-    const existingData = await sheets.spreadsheets.values.get({
-      spreadsheetId: process.env.GOOGLE_SHEET_ID,
-      range: "Inventory Updates!A:Z",
-    });
-    const existingRows = existingData.data.values || [];
-    const lastRowIndex = existingRows.length;
-
-    // If date doesn't exist, add it as a header
-    if (!existingDates.has(formattedDate)) {
-      // Add date row to sheetData
-      sheetData.push([formattedDate]);
-      
-      // Add formatting for the date row
-      if (sheetId) {
-        formatRequests.push({
-          repeatCell: {
-            range: {
-              sheetId,
-              startRowIndex: lastRowIndex,
-              endRowIndex: lastRowIndex + 1,
-            },
-            cell: {
-              userEnteredFormat: {
-                backgroundColor: { red: 0.9, green: 0.9, blue: 0.6 },
-                textFormat: { bold: true },
-              },
-            },
-            fields: "userEnteredFormat(backgroundColor,textFormat)",
-          },
-        });
-      }
-    }
+    // Use product date for time display in rows
+    const productDate = new Date(payload.updated_at || payload.created_at);
+    const timeParisZone = productDate.toLocaleTimeString('fr-FR', { timeZone: 'Europe/Paris' });
 
     // Prepare variants with weight data for database storage
     const variantsWithWeight = [];
@@ -892,27 +844,6 @@ export async function processProductCreate(session, payload) {
       
       // Use the new prepend function
       await prependDataToSheet("Inventory Updates", sheetData, 3);
-
-      // Apply formatting if we have any format requests
-      if (formatRequests.length > 0) {
-        // Update format requests to account for prepended rows
-        const updatedFormatRequests = formatRequests.map(request => ({
-          ...request,
-          repeatCell: {
-            ...request.repeatCell,
-            range: {
-              ...request.repeatCell.range,
-              startRowIndex: request.repeatCell.range.startRowIndex + 2, // +2 for header and date row
-              endRowIndex: request.repeatCell.range.endRowIndex + 2
-            }
-          }
-        }));
-
-        await sheets.spreadsheets.batchUpdate({
-          spreadsheetId: process.env.GOOGLE_SHEET_ID,
-          requestBody: { requests: updatedFormatRequests },
-        });
-      }
 
       console.log(`✅ Successfully prepended ${sheetData.length} rows to Google Sheet`);
     }
@@ -2493,57 +2424,9 @@ export async function processProductUpdate(session, payload) {
     // First ensure sheet has proper headers
     await ensureSheetHasHeader();
 
-    // Get the sheet ID for formatting
-    const authClient = await auth.getClient();
-    const sheets = google.sheets({ version: "v4", auth: authClient });
-    const sheetId = await getSheetId(sheets, "Inventory Updates");
-
-    // Get existing dates from the sheet
-    const existingDates = await getExistingDatesFromSheet(sheets, "Inventory Updates");
-
     // Format the date from the payload
     const productDate = new Date(payload.updated_at || payload.created_at);
-    const formattedDate = productDate.toISOString().split("T")[0];
     const timeParisZone = productDate.toLocaleTimeString('fr-FR', { timeZone: 'Europe/Paris' });
-
-    // Get the last row index
-    const existingData = await sheets.spreadsheets.values.get({
-      spreadsheetId: process.env.GOOGLE_SHEET_ID,
-      range: "Inventory Updates!A:Z",
-    });
-    const existingRows = existingData.data.values || [];
-    const lastRowIndex = existingRows.length;
-
-    // If date doesn't exist, add it as a header
-    if (!existingDates.has(formattedDate)) {
-      // Add date row to sheetData
-      sheetData.push([formattedDate]);
-      
-      // Add formatting for the date row
-      if (sheetId) {
-        const formatRequests = [{
-          repeatCell: {
-            range: {
-              sheetId,
-              startRowIndex: lastRowIndex,
-              endRowIndex: lastRowIndex + 1,
-            },
-            cell: {
-              userEnteredFormat: {
-                backgroundColor: { red: 0.9, green: 0.9, blue: 0.6 },
-                textFormat: { bold: true },
-              },
-            },
-            fields: "userEnteredFormat(backgroundColor,textFormat)",
-          },
-        }];
-
-        await sheets.spreadsheets.batchUpdate({
-          spreadsheetId: process.env.GOOGLE_SHEET_ID,
-          requestBody: { requests: formatRequests },
-        });
-      }
-    }
 
     for (const variant of payload.variants || []) {
       const sku = variant.sku;
@@ -2620,15 +2503,43 @@ export async function processProductUpdate(session, payload) {
           isNewProduct: !existingProduct
         });
 
-        // Generate new subSKU names directly
+        // Get the last subSKU number (regardless of status) to determine starting point
+        const fullSkuData = await db.SKU.findUnique({
+          where: { sku }
+        });
+        let startNumber = 1; // Default start number
+
+        if (fullSkuData && fullSkuData.subSKU && fullSkuData.subSKU.length > 0) {
+          // Get the last subSKU number and start from the next number
+          const lastSubSKU = fullSkuData.subSKU[fullSkuData.subSKU.length - 1];
+          const lastNumberStr = lastSubSKU?.name?.split("-").pop() || "0";
+          startNumber = parseInt(lastNumberStr) + 1; // Start from the next number after the last subSKU
+        } else if (!fullSkuData) {
+          // SKU not found in database - this is a new SKU
+          console.log('🆕 SKU not found in database, treating as new SKU:', {
+            sku,
+            startNumber: 1
+          });
+        }
+
+        console.log('📊 Current inventory state:', {
+          sku,
+          startNumber,
+          newQuantity,
+          availableSubSKUs: skuData?.availableSubSkus?.length || 0
+        });
+
+        // Generate new subSKU names starting from the last available number
         const newSubSKUNames = [];
-        for (let i = 1; i <= quantityIncrease; i++) {
-          const subSKUNumber = String(oldQuantity + i).padStart(4, "0");
+        for (let i = 0; i < quantityIncrease; i++) {
+          const subSKUNumber = String(startNumber + i).padStart(4, "0");
           newSubSKUNames.push(`${sku}-${subSKUNumber}`);
         }
 
         console.log('🆕 Generated new subSKU names:', {
           sku,
+          startNumber,
+          newQuantity,
           newSubSKUNames,
           count: newSubSKUNames.length
         });
@@ -2636,11 +2547,11 @@ export async function processProductUpdate(session, payload) {
         results.push({
           sku,
           success: true,
-          quantityIncrease,
+          quantityIncrease: newQuantity,
           newSubSKUs: newSubSKUNames
         });
 
-        // Add only the new subSKUs to the sheet
+        // Add all the new subSKUs to the sheet
         newSubSKUNames.forEach((subSkuName) => {
           sheetData.push([
             "", // Empty date cell since we have the date header
@@ -2662,6 +2573,8 @@ export async function processProductUpdate(session, payload) {
       }
 
       // Check for weight change (only if weight actually changed and we have existing data)
+      // COMMENTED OUT - Weight update process disabled
+      /*
       if (existingProduct && existingVariant && weightInGrams !== null && weightInGrams !== oldWeight) {
         console.log('⚖️ Processing weight change:', {
           sku,
@@ -2704,6 +2617,7 @@ export async function processProductUpdate(session, payload) {
           });
         }
       }
+      */
 
       if (!shouldAddToSheet) {
         console.log('ℹ️ No changes detected for SKU:', {
