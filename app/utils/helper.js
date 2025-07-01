@@ -690,13 +690,29 @@ export async function processInventoryLevelUpdate(session, payload) {
         targetQuantity: shopifyQuantity
       });
 
-      // removeSubSKUsByQuantity already only removes available subSKUs
-      await removeSubSKUsByQuantity(sku, toRemove);
-
-      console.log('✅ Removed available subSKUs:', {
-        sku,
-        removed: toRemove
-      });
+      // Get current available subSKUs to see how many we can actually remove
+      const [skuData] = await getAvailableSKUs(sku);
+      const availableCount = skuData ? skuData.availableQuantity : 0;
+      
+      // Only remove what's actually available
+      const actualRemove = Math.min(toRemove, availableCount);
+      
+      if (actualRemove > 0) {
+        await removeSubSKUsByQuantity(sku, actualRemove);
+        
+        console.log('✅ Removed available subSKUs:', {
+          sku,
+          requested: toRemove,
+          actualRemoved: actualRemove,
+          available: availableCount
+        });
+      } else {
+        console.log('ℹ️ No available subSKUs to remove:', {
+          sku,
+          requested: toRemove,
+          available: availableCount
+        });
+      }
 
       return {
         success: true,
@@ -2525,8 +2541,7 @@ export async function processProductUpdate(session, payload) {
         console.log('📊 Current inventory state:', {
           sku,
           startNumber,
-          newQuantity,
-          availableSubSKUs: skuData?.availableSubSkus?.length || 0
+          newQuantity
         });
 
         // Generate new subSKU names starting from the last available number
@@ -2572,52 +2587,7 @@ export async function processProductUpdate(session, payload) {
         reason = "Inventory Update";
       }
 
-      // Check for weight change (only if weight actually changed and we have existing data)
-      // COMMENTED OUT - Weight update process disabled
-      /*
-      if (existingProduct && existingVariant && weightInGrams !== null && weightInGrams !== oldWeight) {
-        console.log('⚖️ Processing weight change:', {
-          sku,
-          oldWeight,
-          newWeight: weightInGrams,
-          difference: weightInGrams - oldWeight
-        });
-
-        // Get current available subSKUs for this SKU
-        const [skuData] = await getAvailableSKUs(sku);
-        if (skuData && skuData.availableSubSkus.length > 0) {
-          // Add each available subSKU to the sheet with weight update reason
-          skuData.availableSubSkus.forEach((subSku) => {
-            sheetData.push([
-              "", // Empty date cell since we have the date header
-              timeParisZone, // Time (Paris Time Zone)
-              payload.title, // Item Title
-              sku, // SKU
-              subSku.name, // Sub-SKU
-              variant.title || "", // Variant
-              weightInGrams || "", // Input Weight (in grams)
-              "Weight Update", // Input Reason
-              "", // Free Handwritten Note
-              payload.vendor, // "Supplier Name"
-              "", // "Supplier Address"
-            ]);
-          });
-
-          shouldAddToSheet = true;
-          reason = "Weight Update";
-
-          results.push({
-            sku,
-            success: true,
-            weightChange: {
-              oldWeight,
-              newWeight: weightInGrams,
-              subSKUsUpdated: skuData.availableSubSkus.length
-            }
-          });
-        }
-      }
-      */
+      // Weight update process is currently disabled
 
       if (!shouldAddToSheet) {
         console.log('ℹ️ No changes detected for SKU:', {
