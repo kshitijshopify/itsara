@@ -636,17 +636,21 @@ export async function processInventoryLevelUpdate(session, payload) {
       });
       
       // Generate new subSKUs starting from the next number
-      const currentSubSKUs = skuData.availableSubSkus || [];
+      // Get ALL subSKUs from database (any status) to find the last number
+      const fullSkuData = await db.SKU.findUnique({
+        where: { sku }
+      });
+      
       let lastNumber = 0;
       
-      if (currentSubSKUs.length > 0) {
-        const lastSubSKU = currentSubSKUs[currentSubSKUs.length - 1];
-        // Add null check for name property and provide default value
+      if (fullSkuData && fullSkuData.subSKU && fullSkuData.subSKU.length > 0) {
+        // Get the last subSKU number from ALL subSKUs (any status)
+        const lastSubSKU = fullSkuData.subSKU[fullSkuData.subSKU.length - 1];
         const lastNumberStr = lastSubSKU?.name?.split("-").pop() || "0";
         lastNumber = parseInt(lastNumberStr);
       }
       
-      console.log("Data>>>>", {lastNumber, currentSubSKUs, skuData, sku});
+      console.log("Data>>>>", {lastNumber, skuData, sku});
       
       const newSubSKUs = Array.from({ length: toAdd }, (_, i) => ({
         name: `${sku}-${String(lastNumber + i + 1).padStart(4, "0")}`,
@@ -2558,6 +2562,8 @@ export async function processProductUpdate(session, payload) {
           newSubSKUNames,
           count: newSubSKUNames.length
         });
+
+
 
         results.push({
           sku,
