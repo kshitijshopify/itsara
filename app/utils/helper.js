@@ -2494,7 +2494,7 @@ export async function processProductUpdate(session, payload) {
       // Find existing variant data from the product database
       const existingVariant = existingProduct ? existingProduct.variants.find(v => v.sku === sku) : null;
       const newQuantity = variant.inventory_quantity || 0;
-      const oldQuantity = existingVariant ? existingVariant.quantity : 0;
+      const oldQuantity = existingVariant ? (existingVariant.quantity < 0 ? 0 : existingVariant.quantity) : 0;
       const oldWeight = existingVariant ? existingVariant.weightInGram : 0;
 
       console.log('📊 Comparison for SKU:', {
