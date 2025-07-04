@@ -2890,7 +2890,7 @@ export async function processOrderEdit(session, payload) {
           subSkuName, // Sub-SKU
           lineItem.variantTitle || "", // Variant
           "", // Selected Size
-          weightInGrams || "", // Output Weight
+          "-" + weightInGrams || "", // Output Weight
           "Order Edit - Addition", // Output Reason
           "", // Free Handwritten Note
           `${order.customer?.firstName || ""} ${order.customer?.lastName || ""}`.trim(), // Customer Name
@@ -3060,7 +3060,7 @@ export async function processOrderEdit(session, payload) {
           subSkuName, // Sub-SKU
           lineItem.variantTitle || "", // Variant
           "", // Selected Size
-          "", // Output Weight
+          weightInGrams || "", // Output Weight
           "Order Edit - Removal", // Output Reason
           "", // Free Handwritten Note
           `${order.customer?.firstName || ""} ${order.customer?.lastName || ""}`.trim(), // Customer Name

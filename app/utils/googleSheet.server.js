@@ -296,8 +296,8 @@ export async function insertOrdersGroupedByDate(sheetTitle, orders) {
               subSKU, // Sub-SKU
               lineItem.variant, // Variant
               lineItem.selected_size, // Selected Size
-              lineItem.weight, // Output Weight
-              "", // Output Reason
+              "-" + lineItem.weight, // Output Weight
+              "Order Placed", // Output Reason
               "", // Free Handwritten Note
               order.customerName, // Customer Name
               order.email, // Email
