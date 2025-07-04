@@ -825,36 +825,49 @@ export async function processProductCreate(session, payload) {
         weight_in_gram: weightInGrams || 0
       });
 
-      // Create SKU if it doesn't exist
-      let [skuData] = await getAvailableSKUs(sku);
-      if (!skuData) {
-        await createNewSKU(sku, variant.inventory_quantity || 0);
-        [skuData] = await getAvailableSKUs(sku);
+      // NEW APPROACH: Generate subSKUs based on inventory quantity without using SKU model
+      const quantity = variant.inventory_quantity || 0;
+      const subSKUNames = [];
+      
+      // Generate subSKU names starting from 1
+      for (let i = 1; i <= quantity; i++) {
+        const subSKUNumber = String(i).padStart(4, "0");
+        subSKUNames.push(`${sku}-${subSKUNumber}`);
       }
+
+      // Calculate the latest subSKU number for database storage
+      const latestSubSkuNumber = quantity > 0 ? quantity : 0;
 
       results.push({
         sku,
         success: true,
-        quantity: skuData.totalQuantity,
-        availableQuantity: skuData.availableQuantity,
+        quantity: quantity,
+        availableQuantity: quantity,
+        latestSubSkuNumber: latestSubSkuNumber
       });
 
       // Add each subSKU as a separate row in the sheet
-      skuData.availableSubSkus.forEach((subSku) => {
+      subSKUNames.forEach((subSkuName) => {
         sheetData.push([
           "", // Empty date cell since we have the date header
           timeParisZone, // Time (Paris Time Zone)
           payload.title, // Item Title
           sku, // SKU
-          subSku.name, // Sub-SKU
+          subSkuName, // Sub-SKU
           variant.title || "", // Variant
           weightInGrams || "", // Input Weight (in grams)
-          "", // Input Reason
+          "Product Creation", // Input Reason
           "", // Free Handwritten Note
           payload.vendor, // "Supplier Name"
           "", // "Supplier Address"
         ]);
       });
+
+      // Update the variant to include latestSubSkuNumber for database storage
+      const variantWithLatestNumber = variantsWithWeight.find(v => v.sku === sku);
+      if (variantWithLatestNumber) {
+        variantWithLatestNumber.latestSubSkuNumber = latestSubSkuNumber;
+      }
     }
 
     // Update Google Sheet with all the data
@@ -2365,11 +2378,36 @@ export async function saveProductToDatabase(payload, options = {}) {
         weightInGram = variant.weight_in_gram;
       }
 
+      // Get existing variant data to preserve latestSubSkuNumber
+      const existingProduct = await getProductFromDatabase(payload.id);
+      const existingVariant = existingProduct ? existingProduct.variants.find(v => v.sku === variant.sku) : null;
+      let latestSubSkuNumber = existingVariant ? existingVariant.latestSubSkuNumber || 0 : 0;
+
+      // Check if we have updated latestSubSkuNumber from options (for product updates)
+      if (options.variantWeights && options.variantWeights[variant.id] && typeof options.variantWeights[variant.id] === 'object') {
+        if (options.variantWeights[variant.id].latestSubSkuNumber !== undefined) {
+          const newLatestSubSkuNumber = options.variantWeights[variant.id].latestSubSkuNumber;
+          // SAFETY CHECK: Never decrease latestSubSkuNumber
+          latestSubSkuNumber = Math.max(latestSubSkuNumber, newLatestSubSkuNumber);
+        }
+        if (options.variantWeights[variant.id].weight !== undefined) {
+          weightInGram = options.variantWeights[variant.id].weight;
+        }
+      }
+
+      // Check if the variant already has latestSubSkuNumber from the payload (for product creation)
+      if (variant.latestSubSkuNumber !== undefined) {
+        const payloadLatestSubSkuNumber = variant.latestSubSkuNumber;
+        // SAFETY CHECK: Never decrease latestSubSkuNumber
+        latestSubSkuNumber = Math.max(latestSubSkuNumber, payloadLatestSubSkuNumber);
+      }
+
       processedVariants.push({
         title: variant.title || "",
         weightInGram: weightInGram,
         quantity: variant.inventory_quantity || 0,
-        sku: variant.sku || ""
+        sku: variant.sku || "",
+        latestSubSkuNumber: latestSubSkuNumber
       });
     }
 
@@ -2489,7 +2527,9 @@ export async function processProductUpdate(session, payload) {
       }
 
       // Store weight data for database update
-      variantWeights[variant.id] = weightInGrams || 0;
+      variantWeights[variant.id] = {
+        weight: weightInGrams || 0
+      };
 
       // Find existing variant data from the product database
       const existingVariant = existingProduct ? existingProduct.variants.find(v => v.sku === sku) : null;
@@ -2523,20 +2563,21 @@ export async function processProductUpdate(session, payload) {
           isNewProduct: !existingProduct
         });
 
-        // Get the last subSKU number (regardless of status) to determine starting point
-        const fullSkuData = await db.SKU.findUnique({
-          where: { sku }
-        });
+        // Get the latest subSKU number from the product variant data (NEW APPROACH)
+        const existingVariant = existingProduct ? existingProduct.variants.find(v => v.sku === sku) : null;
         let startNumber = 1; // Default start number
 
-        if (fullSkuData && fullSkuData.subSKU && fullSkuData.subSKU.length > 0) {
-          // Get the last subSKU number and start from the next number
-          const lastSubSKU = fullSkuData.subSKU[fullSkuData.subSKU.length - 1];
-          const lastNumberStr = lastSubSKU?.name?.split("-").pop() || "0";
-          startNumber = parseInt(lastNumberStr) + 1; // Start from the next number after the last subSKU
-        } else if (!fullSkuData) {
-          // SKU not found in database - this is a new SKU
-          console.log('🆕 SKU not found in database, treating as new SKU:', {
+        if (existingVariant && existingVariant.latestSubSkuNumber) {
+          // Use the latest subSKU number from the product variant and start from the next number
+          startNumber = existingVariant.latestSubSkuNumber + 1;
+          console.log('📊 Using latestSubSkuNumber from product variant:', {
+            sku,
+            latestSubSkuNumber: existingVariant.latestSubSkuNumber,
+            startNumber
+          });
+        } else {
+          // No existing data - this is a new variant
+          console.log('🆕 New variant or no latestSubSkuNumber found, starting from 1:', {
             sku,
             startNumber: 1
           });
@@ -2565,11 +2606,33 @@ export async function processProductUpdate(session, payload) {
 
 
 
+        // Calculate the new latest subSKU number
+        const newLatestSubSkuNumber = startNumber + quantityIncrease - 1;
+        
+        // SAFETY CHECK: Ensure latestSubSkuNumber never decreases
+        const currentLatestSubSkuNumber = existingVariant ? existingVariant.latestSubSkuNumber || 0 : 0;
+        const finalLatestSubSkuNumber = Math.max(newLatestSubSkuNumber, currentLatestSubSkuNumber);
+        
+        console.log('🛡️ Safety check for latestSubSkuNumber:', {
+          sku,
+          currentLatestSubSkuNumber,
+          newLatestSubSkuNumber,
+          finalLatestSubSkuNumber,
+          willIncrease: finalLatestSubSkuNumber > currentLatestSubSkuNumber
+        });
+        
+        // Update the variant weights object to include the new latestSubSkuNumber
+        if (!variantWeights[variant.id]) {
+          variantWeights[variant.id] = {};
+        }
+        variantWeights[variant.id].latestSubSkuNumber = finalLatestSubSkuNumber;
+
         results.push({
           sku,
           success: true,
           quantityIncrease: newQuantity,
-          newSubSKUs: newSubSKUNames
+          newSubSKUs: newSubSKUNames,
+          newLatestSubSkuNumber
         });
 
         // Add all the new subSKUs to the sheet

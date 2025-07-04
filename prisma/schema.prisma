@@ -37,7 +37,7 @@ model Product {
   productId   String   @unique // Shopify product ID
   title       String   // Product title
   vendor      String?  // Product vendor
-  variants    Json[]   // Array of variant objects with title, weightInGram, quantity, sku
+  variants    Json[]   // Array of variant objects with title, weightInGram, quantity, sku, latestSubSkuNumber
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 }
