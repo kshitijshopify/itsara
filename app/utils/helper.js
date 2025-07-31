@@ -849,7 +849,7 @@ export async function processProductCreate(session, payload) {
       // Add each subSKU as a separate row in the sheet
       subSKUNames.forEach((subSkuName) => {
         sheetData.push([
-          "", // Empty date cell since we have the date header
+          productDate.toISOString().split("T")[0], // Date
           timeParisZone, // Time (Paris Time Zone)
           payload.title, // Item Title
           sku, // SKU
@@ -2638,7 +2638,7 @@ export async function processProductUpdate(session, payload) {
         // Add all the new subSKUs to the sheet
         newSubSKUNames.forEach((subSkuName) => {
           sheetData.push([
-            "", // Empty date cell since we have the date header
+            productDate.toISOString().split("T")[0], // Date
             timeParisZone, // Time (Paris Time Zone)
             payload.title, // Item Title
             sku, // SKU
