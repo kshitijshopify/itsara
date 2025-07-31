@@ -285,10 +285,11 @@ export async function insertOrdersGroupedByDate(sheetTitle, orders) {
               continue;
             }
             processedSubSKUs.add(subSKU);
-            const timeParisZone = new Date(order.created_at).toLocaleTimeString('fr-FR', { timeZone: 'Europe/Paris' });
-            
+            const currentDate = order.created_at ? new Date(order.created_at) : new Date();
+            const timeParisZone = currentDate.toLocaleTimeString('fr-FR', { timeZone: 'Europe/Paris' });
+
             allRows.push([
-              "", // Date
+              currentDate.toISOString().split("T")[0], // Date
               timeParisZone, // Time(Paris Time Zone)
               order.name, // Invoice Number
               lineItem.title, // Item Title

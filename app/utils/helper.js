@@ -1666,11 +1666,11 @@ export async function processOrderCancellation(session, payload, type = "cancell
         console.error(`Error fetching variant weight for ${sku}:`, error);
       }
       // Add to sheet data for each subSKU being returned
-      const currentDate = order.createdAt ? new Date(order.createdAt) : new Date();
+      const currentDate = payload.cancelled_at ? new Date(payload.cancelled_at) : new Date();
       const timeParisZone = currentDate.toLocaleTimeString('fr-FR', { timeZone: 'Europe/Paris' });
       markedAvailable.forEach((subSkuName) => {
         sheetData.push([
-          "", // Date
+          currentDate.toISOString().split("T")[0], // Date
           timeParisZone, // Time (Paris Time Zone)
           order.name, // Invoice Number
           lineItem.title, // Item Title
@@ -2207,12 +2207,12 @@ export async function processRefund(session, payload) {
       }
 
       // Add to sheet data for each subSKU being returned
-      const currentDate = new Date();
+      const currentDate = payload.created_at ? new Date(payload.created_at) : new Date();
       const timeParisZone = currentDate.toLocaleTimeString('fr-FR', { timeZone: 'Europe/Paris' });
       
       markedAvailable.forEach((subSkuName) => {
         sheetData.push([
-          "", // Date
+          currentDate.toISOString().split("T")[0], // Date
           timeParisZone, // Time (Paris Time Zone)
           order.name, // Invoice Number
           lineItem.title, // Item Title
@@ -2940,12 +2940,12 @@ export async function processOrderEdit(session, payload) {
       }
 
       // Add to sheet data for each subSKU
-      const currentDate = order.updatedAt ? new Date(order.updatedAt) : order.createdAt ? new Date(order.createdAt) : new Date();
+      const currentDate = payload.committed_at ? new Date(payload.committed_at) : payload.created_at ? new Date(payload.created_at) : new Date();
       const timeParisZone = currentDate.toLocaleTimeString('fr-FR', { timeZone: 'Europe/Paris' });
 
       subSKUsToAssign.forEach((subSkuName) => {
         sheetData.push([
-          "", // Date
+          currentDate.toISOString().split("T")[0], // Date
           timeParisZone, // Time (Paris Time Zone)
           order.name, // Invoice Number
           lineItem.title, // Item Title
@@ -3110,12 +3110,12 @@ export async function processOrderEdit(session, payload) {
       }
 
       // Add to sheet data for each subSKU being returned
-      const currentDate = order.updatedAt ? new Date(order.updatedAt) : order.createdAt ? new Date(order.createdAt) : new Date();
+      const currentDate = payload.committed_at ? new Date(payload.committed_at) : payload.created_at ? new Date(payload.created_at) : new Date();
       const timeParisZone = currentDate.toLocaleTimeString('fr-FR', { timeZone: 'Europe/Paris' });
 
       subSKUsToMarkAvailable.forEach((subSkuName) => {
         sheetData.push([
-          "", // Date
+          currentDate.toISOString().split("T")[0], // Date
           timeParisZone, // Time (Paris Time Zone)
           order.name, // Invoice Number
           lineItem.title, // Item Title
