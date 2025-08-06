@@ -708,6 +708,7 @@ export async function processInventoryLevelUpdate(session, payload) {
         await removeSubSKUsByQuantity(sku, actualRemove);
         
         // Log inventory reduction
+        console.log('📝 About to log inventory reduction:', { sku, actualRemove });
         await logInventoryReductionWithReason(sku, actualRemove, "Reduced by");
         
         console.log('✅ Removed available subSKUs:', {

@@ -1,5 +1,5 @@
 import { google } from "googleapis";
-import { auth, ensureSheetTabExists, getSheetId } from "./googleSheet.server";
+import { auth, ensureSheetTabExists } from "./googleSheet.server";
 
 const SHEET_ID = process.env.GOOGLE_SHEET_ID;
 
@@ -37,7 +37,7 @@ export async function ensureInventoryReduceSheet() {
 export async function logInventoryReductionWithReason(sku, quantity, reason) {
   try {
     await ensureInventoryReduceSheet();
-    
+    console.log("🔍 Logging inventory reduction with reason:", { sku, quantity, reason });
     const authClient = await auth.getClient();
     const sheets = google.sheets({ version: "v4", auth: authClient });
 
@@ -59,66 +59,12 @@ export async function logInventoryReductionWithReason(sku, quantity, reason) {
       quantity.toString()   // Value (quantity removed)
     ];
 
-    // Get the next row number
-    const response = await sheets.spreadsheets.values.get({
+    // Simple append to the sheet
+    await sheets.spreadsheets.values.append({
       spreadsheetId: SHEET_ID,
-      range: "Inventory Reduce!A:A",
-    });
-    
-    const nextRow = (response.data.values?.length || 1) + 1;
-    
-    // Insert a new row
-    await sheets.spreadsheets.batchUpdate({
-      spreadsheetId: SHEET_ID,
-      requestBody: {
-        requests: [{
-          insertDimension: {
-            range: {
-              sheetId: await getSheetId(sheets, "Inventory Reduce"),
-              dimension: "ROWS",
-              startIndex: nextRow - 1,
-              endIndex: nextRow
-            },
-            inheritFromBefore: false
-          }
-        }]
-      }
-    });
-
-    // Clear formatting from the inserted row
-    await sheets.spreadsheets.batchUpdate({
-      spreadsheetId: SHEET_ID,
-      requestBody: {
-        requests: [{
-          repeatCell: {
-            range: {
-              sheetId: await getSheetId(sheets, "Inventory Reduce"),
-              startRowIndex: nextRow - 1,
-              endRowIndex: nextRow,
-              startColumnIndex: 0,
-              endColumnIndex: 5
-            },
-            cell: {
-              userEnteredFormat: {
-                backgroundColor: { red: 1, green: 1, blue: 1 }, // White background
-                textFormat: {
-                  foregroundColor: { red: 0, green: 0, blue: 0 }, // Black text
-                  bold: false,
-                  italic: false
-                }
-              }
-            },
-            fields: "userEnteredFormat(backgroundColor,textFormat)"
-          }
-        }]
-      }
-    });
-
-    // Write data to the new row
-    await sheets.spreadsheets.values.update({
-      spreadsheetId: SHEET_ID,
-      range: `Inventory Reduce!A${nextRow}`,
+      range: "Inventory Reduce!A:E",
       valueInputOption: "USER_ENTERED",
+      insertDataOption: "INSERT_ROWS",
       requestBody: {
         values: [newRow],
       },
