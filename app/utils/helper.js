@@ -705,12 +705,7 @@ export async function processInventoryLevelUpdate(session, payload) {
       const actualRemove = Math.min(toRemove, availableCount);
       
       if (actualRemove > 0) {
-        await removeSubSKUsByQuantity(sku, actualRemove);
-        
-        // Log inventory reduction
-        console.log('📝 About to log inventory reduction:', { sku, actualRemove });
-        await logInventoryReductionWithReason(sku, actualRemove, "Reduced by");
-        
+        await removeSubSKUsByQuantity(sku, actualRemove);        
         console.log('✅ Removed available subSKUs:', {
           sku,
           requested: toRemove,
@@ -2665,6 +2660,20 @@ export async function processProductUpdate(session, payload) {
 
         shouldAddToSheet = true;
         reason = "Inventory Update";
+      } else if (newQuantity < oldQuantity) {
+        const quantityDecrease = existingProduct ? (oldQuantity - newQuantity) : oldQuantity;
+        console.log('➖ Processing inventory decrease:', {
+          sku,
+          decrease: quantityDecrease,
+          from: oldQuantity,
+          to: newQuantity,
+          isNewProduct: !existingProduct
+        });
+
+        // Log inventory reduction
+        console.log("🔍 Logging inventory reduction with reason:", { sku, quantityDecrease, reason: "Reduced by" });
+        await logInventoryReductionWithReason(sku, quantityDecrease, "Reduced by");
+        
       }
 
       // Weight update process is currently disabled
