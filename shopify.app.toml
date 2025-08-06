@@ -1,7 +1,7 @@
 # Learn more about configuring your app at https://shopify.dev/docs/apps/tools/cli/configuration
 
 client_id = "9e3d8cb192cb91a730d1af18d80c4324"
-application_url = "https://itsara-1.onrender.com"
+application_url = "https://itsara-uruj.onrender.com"
 embedded = true
 name = "Product sync"
 handle = "product-sync-52"
@@ -55,9 +55,9 @@ scopes = "write_inventory,write_locations,write_orders,write_products,write_cust
 
 [auth]
 redirect_urls = [
-  "https://itsara-1.onrender.com/auth/callback",
-  "https://itsara-1.onrender.com/auth/shopify/callback",
-  "https://itsara-1.onrender.com/api/auth/callback"
+  "https://itsara-uruj.onrender.com/auth/callback",
+  "https://itsara-uruj.onrender.com/auth/shopify/callback",
+  "https://itsara-uruj.onrender.com/api/auth/callback"
 ]
 
 [pos]

@@ -708,7 +708,7 @@ export async function processInventoryLevelUpdate(session, payload) {
         await removeSubSKUsByQuantity(sku, actualRemove);
         
         // Log inventory reduction
-        await logInventoryReductionWithReason(sku, actualRemove, "Inventory Update");
+        await logInventoryReductionWithReason(sku, actualRemove, "Reduced by");
         
         console.log('✅ Removed available subSKUs:', {
           sku,
@@ -1242,9 +1242,6 @@ export async function processOrderCreation(session, payload) {
         "unavailable"
       );
 
-      // Log inventory reduction for order
-      await logInventoryReductionWithReason(sku, quantity, "Order Placed");
-
       const [updatedOurData] = await getAvailableSKUs(sku);
       const ourNewQuantity = updatedOurData.availableQuantity;
       console.log('updatedOurData after marking unavailable', updatedOurData);
@@ -1601,8 +1598,7 @@ export async function processOrderCancellation(session, payload, type = "cancell
         });
         await removeSubSKUsByQuantity(sku, toRemove);
         
-        // Log inventory reduction from order cancellation
-        await logInventoryReductionWithReason(sku, toRemove, "Order Cancelled");
+
       }
 
       return {
@@ -2101,8 +2097,7 @@ export async function processRefund(session, payload) {
         });
         await removeSubSKUsByQuantity(sku, toRemove);
         
-        // Log inventory reduction from refund
-        await logInventoryReductionWithReason(sku, toRemove, "Refund");
+
       }
 
       return {
@@ -3123,8 +3118,7 @@ export async function processOrderEdit(session, payload) {
         });
         await removeSubSKUsByQuantity(sku, toRemove);
         
-        // Log inventory reduction from order edit
-        await logInventoryReductionWithReason(sku, toRemove, "Order Edit");
+
       }
 
       // Add to sheet data for each subSKU being returned
