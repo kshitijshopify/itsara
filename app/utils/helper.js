@@ -13,6 +13,9 @@ import {
   auth,
   prependDataToSheet
 } from "./googleSheet.server";
+import { 
+  logInventoryReductionWithReason
+} from "./inventoryLog.server";
 import { makeShopifyGraphQLRequest } from "../utils/shopify.server";
 import { google } from "googleapis";
 import process from "process";
@@ -704,6 +707,9 @@ export async function processInventoryLevelUpdate(session, payload) {
       if (actualRemove > 0) {
         await removeSubSKUsByQuantity(sku, actualRemove);
         
+        // Log inventory reduction
+        await logInventoryReductionWithReason(sku, actualRemove, "Inventory Update");
+        
         console.log('✅ Removed available subSKUs:', {
           sku,
           requested: toRemove,
@@ -1236,6 +1242,9 @@ export async function processOrderCreation(session, payload) {
         "unavailable"
       );
 
+      // Log inventory reduction for order
+      await logInventoryReductionWithReason(sku, quantity, "Order Placed");
+
       const [updatedOurData] = await getAvailableSKUs(sku);
       const ourNewQuantity = updatedOurData.availableQuantity;
       console.log('updatedOurData after marking unavailable', updatedOurData);
@@ -1591,6 +1600,9 @@ export async function processOrderCancellation(session, payload, type = "cancell
           shopifyQuantity
         });
         await removeSubSKUsByQuantity(sku, toRemove);
+        
+        // Log inventory reduction from order cancellation
+        await logInventoryReductionWithReason(sku, toRemove, "Order Cancelled");
       }
 
       return {
@@ -2088,6 +2100,9 @@ export async function processRefund(session, payload) {
           shopifyQuantity
         });
         await removeSubSKUsByQuantity(sku, toRemove);
+        
+        // Log inventory reduction from refund
+        await logInventoryReductionWithReason(sku, toRemove, "Refund");
       }
 
       return {
@@ -3107,6 +3122,9 @@ export async function processOrderEdit(session, payload) {
           shopifyQuantity
         });
         await removeSubSKUsByQuantity(sku, toRemove);
+        
+        // Log inventory reduction from order edit
+        await logInventoryReductionWithReason(sku, toRemove, "Order Edit");
       }
 
       // Add to sheet data for each subSKU being returned

@@ -11,7 +11,7 @@ const SHEET_ID = process.env.GOOGLE_SHEET_ID;
 const SCOPES = ["https://www.googleapis.com/auth/spreadsheets"];
 
 // Load and process the service account credentials
-function getServiceAccountCredentials() {
+export function getServiceAccountCredentials() {
   // const keyFile = JSON.parse(fs.readFileSync(KEY_FILE_PATH, 'utf8'));
   return {
     type: process.env.GOOGLE_TYPE,
