@@ -1,5 +1,5 @@
 import { google } from "googleapis";
-import { auth, ensureSheetTabExists } from "./googleSheet.server";
+import { auth, ensureSheetTabExists, getSheetId } from "./googleSheet.server";
 
 const SHEET_ID = process.env.GOOGLE_SHEET_ID;
 
@@ -59,12 +59,59 @@ export async function logInventoryReductionWithReason(sku, quantity, reason) {
       quantity.toString()   // Value (quantity removed)
     ];
 
-    // Simple append to the sheet
-    await sheets.spreadsheets.values.append({
+    // Use the same approach as prependDataToSheet
+    // Step 1: Insert a new row at the top (after header)
+    await sheets.spreadsheets.batchUpdate({
       spreadsheetId: SHEET_ID,
-      range: "Inventory Reduce!A:E",
+      requestBody: {
+        requests: [{
+          insertDimension: {
+            range: {
+              sheetId: await getSheetId(sheets, "Inventory Reduce"),
+              dimension: "ROWS",
+              startIndex: 1, // After header row
+              endIndex: 2
+            },
+            inheritFromBefore: false
+          }
+        }]
+      }
+    });
+
+    // Step 2: Clear formatting from the inserted row
+    await sheets.spreadsheets.batchUpdate({
+      spreadsheetId: SHEET_ID,
+      requestBody: {
+        requests: [{
+          repeatCell: {
+            range: {
+              sheetId: await getSheetId(sheets, "Inventory Reduce"),
+              startRowIndex: 1,
+              endRowIndex: 2,
+              startColumnIndex: 0,
+              endColumnIndex: 5
+            },
+            cell: {
+              userEnteredFormat: {
+                backgroundColor: { red: 1, green: 1, blue: 1 }, // White background
+                textFormat: {
+                  foregroundColor: { red: 0, green: 0, blue: 0 }, // Black text
+                  bold: false,
+                  italic: false
+                }
+              }
+            },
+            fields: "userEnteredFormat(backgroundColor,textFormat)"
+          }
+        }]
+      }
+    });
+
+    // Step 3: Write data to the new row (row 2)
+    await sheets.spreadsheets.values.update({
+      spreadsheetId: SHEET_ID,
+      range: "Inventory Reduce!A2",
       valueInputOption: "USER_ENTERED",
-      insertDataOption: "INSERT_ROWS",
       requestBody: {
         values: [newRow],
       },
